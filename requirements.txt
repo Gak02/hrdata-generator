@@ -2,3 +2,4 @@ streamlit
 faker
 pandas
 numpy
+openpyxl
