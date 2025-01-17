@@ -206,6 +206,7 @@ position_to_grade = {
     "C-Level": "Lv6"
 }
 
+@st.cache_data
 def generate_employee_data():
     """Generate employee data based on selected parameters"""
     data = []
