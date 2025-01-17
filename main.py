@@ -16,23 +16,27 @@ st.set_page_config(
 st.title("🪄 HR Data Generator")
 st.markdown("""
 This application generates sample HR data for one month with realistic employee information.
-You can customize various parameters and download the generated dataset in multiple formats.
+You can customise various parameters and download the generated dataset in multiple formats.
 """)
 
-# フィールド名とその説明をリストにまとめる
+# Field names and its description
 fields = [
     "Employee ID",
     "Name",
     "Age",
     "Gender",
-    "Organization",
+    "Organisation",
     "Position",
     "Salary",
     "Hire Date",
     "Resign Date",
     "Engagement Score",
     "Performance",
-    "Marital Status"
+    "Marital Status",
+    "Address",
+    "Emp Type",
+    "Job Category",
+    "Job Grade"
 ]
 
 descriptions = [
@@ -40,32 +44,35 @@ descriptions = [
     "Full name of the employee",
     "Employee's age",
     "Employee's gender identity",
-    "Four-level organizational hierarchy",
+    "Four-level organisational hierarchy",
     "Job title/role",
     "Annual salary in USD",
     "Employment start date",
     "Employment end date (if applicable)",
-    "Employee engagement rating (1-5)",
-    "Annual performance rating",
-    "Whether the employee is married"
+    "Employee engagement score",
+    "Annual performance result",
+    "Whether the employee is married",
+    "Employee's address",
+    "Type of employment (e.g., full-time, part-time)",
+    "Functional or professional category for the job",
+    "Grade or level of the job within the company"
 ]
 
-# データフレームの作成
+# Create data frame
 data = {"Field": fields, "Description": descriptions}
 df = pd.DataFrame(data)
 
-# メインコンテンツにデータフレームをスクロールなしで表示
+# Display field descriptions on the main body
 st.subheader("Field Descriptions")
 st.table(df)
 
 # Sidebar for parameters
-st.sidebar.header("📊 Configuration")
+st.sidebar.header("⚙️ Configuration")
 
 # Language selection
 languages = {
     "English": "en_US",
-    "Japanese": "ja_JP",
-    "Spanish": "es_ES"
+    "Japanese": "ja_JP"
 }
 selected_language = st.sidebar.selectbox(
     "Select Language",
@@ -91,14 +98,18 @@ include_fields = {
     "Name": st.sidebar.checkbox("Name", value=True),
     "Age": st.sidebar.checkbox("Age", value=True),
     "Gender": st.sidebar.checkbox("Gender", value=True),
-    "Organization": st.sidebar.checkbox("Organization Hierarchy", value=True),
+    "Organisation": st.sidebar.checkbox("Organisation Hierarchy", value=True),
     "Position": st.sidebar.checkbox("Position", value=True),
     "Salary": st.sidebar.checkbox("Salary", value=True),
     "Hire Date": st.sidebar.checkbox("Hire Date", value=True),
     "Resign Date": st.sidebar.checkbox("Resign Date", value=True),
     "Engagement Score": st.sidebar.checkbox("Engagement Score", value=True),
     "Performance": st.sidebar.checkbox("Performance Result", value=True),
-    "Marital Status": st.sidebar.checkbox("Marital Status", value=True)
+    "Marital Status": st.sidebar.checkbox("Marital Status", value=True),
+    "Address": st.sidebar.checkbox("Address", value=True),
+    "Emp Type": st.sidebar.checkbox("Emp Type", value=True),
+    "Job Category": st.sidebar.checkbox("Job Category", value=True),
+    "Job Grade": st.sidebar.checkbox("Job Grade", value=True)
 }
 
 # Additional parameters
@@ -113,7 +124,7 @@ age_range = st.sidebar.slider(
 salary_range = st.sidebar.slider(
     "Salary Range (JPY)",
     min_value=3000000,
-    max_value=50000000,
+    max_value=30000000,
     value=(4000000, 10000000)
 )
 
@@ -123,8 +134,8 @@ include_side_jobs = st.sidebar.checkbox(
     help="Generate additional subaffiliated job records for some employees"
 )
 
-# Organization hierarchy
-organizations = {
+# Organisation hierarchy
+organisations = {
     "org_lv1": ["Sample inc."],
     "org_lv2": ["Sales&Marketing", "Engineering", "HR", "Finance"],
     "org_lv4": ["Team A", "Team B", "Team C", "Team D", "Team E"],
@@ -163,13 +174,36 @@ position_hierarchy = {
 position_weights = [5, 3, 1, 0.6, 0.3, 0.1]
 position_choices = ["Staff", "Team Lead", "Manager", "General Manager", "VP", "C-Level"]
 
-
 # Define engagement score thresholds for performance levels
 performance_levels = {
     "S": 90,
     "A": 75,
     "B": 50,
     "C": 0
+}
+
+# emp type list and define weights
+employee_types = ["full-time", "contract", "outsourced"]
+emp_type_weights = [6, 3, 1]
+
+# job category list
+sales_marketing = ["Sales", "Marketing", "Customer Success"]
+engineering = ["Software Engineering", "Data Science / Data Engineering", "IT Infrastructure / Cloud"]
+hr_category = ["HR"]
+finance = ["Finance / Accounting", "Business Planning", "Internal Audit / Compliance"]
+
+# List of capitals and non-capitals
+capitals = ["Tokyo", "Kanagawa", "Saitama"]
+non_capitals = ["Hyogo", "Kyoto", "Ibaraki", "Hiroshima", "Osaka", "Aichi", "Hokkaido", "Fukuoka"]
+
+# job grade mapping
+position_to_grade = {
+    "Staff": "Lv1",
+    "Team Lead": "Lv2",
+    "Manager": "Lv3",
+    "General Manager": "Lv4",
+    "VP": "Lv5",
+    "C-Level": "Lv6"
 }
 
 def generate_employee_data():
@@ -192,13 +226,13 @@ def generate_employee_data():
         if include_fields["Gender"]:
             employee["gender"] = random.choice(["Male", "Female", "Other"])
 
-        if include_fields["Organization"]:
-            employee["org_lv1"] = random.choice(organizations["org_lv1"])
+        if include_fields["Organisation"]:
+            employee["org_lv1"] = random.choice(organisations["org_lv1"])
             employee["org_lv2"] = random.choices(org_lv2_choices, weights=org_lv2_weights, k=1)[0]
             # Generate org_lv3 based on org_lv2
             org_lv2 = employee["org_lv2"]
             employee["org_lv3"] = random.choice(departments.get(org_lv2, ["General"]))
-            employee["org_lv4"] = random.choice(organizations["org_lv4"])
+            employee["org_lv4"] = random.choice(organisations["org_lv4"])
 
         if include_fields["Position"]:
             # Assign position based on weighted random selection
@@ -237,7 +271,36 @@ def generate_employee_data():
         if include_fields["Marital Status"]:
             employee["is_married"] = random.choice([True, False])
 
-        # Nullify organization fields for specific positions
+        if include_fields.get("Address"):
+            # 80% from capitals、20% from non-capitals
+            if random.random() < 0.8:
+                city = random.choice(capitals)
+            else:
+                city = random.choice(non_capitals)
+
+            employee["address"] = city
+
+        if include_fields.get("Emp Type"):
+            employee["emp_type"] = random.choices(employee_types, weights=emp_type_weights, k=1)[0]
+
+        if include_fields.get("Job Category"):
+            org_lv2 = employee.get("org_lv2", "")
+            if org_lv2 == "Sales&Marketing":
+                employee["job_category"] = random.choice(sales_marketing)
+            elif org_lv2 == "Engineering":
+                employee["job_category"] = random.choice(engineering)
+            elif org_lv2 == "HR":
+                employee["job_category"] = random.choice(hr_category)
+            elif org_lv2 == "Finance":
+                employee["job_category"] = random.choice(finance)
+            else:
+                employee["job_category"] = "General"
+
+        if include_fields.get("Job Grade"):
+            position = employee.get("position", "Staff")
+            employee["job_grade"] = position_to_grade.get(position, "Lv1")
+
+        # Nullify Organisation fields for specific positions
         position = employee.get("position")
         if position == "C-Level":
             employee["org_lv2"] = None
@@ -255,7 +318,7 @@ def generate_employee_data():
             concurrent_job["emp_id"] = f"{concurrent_job['emp_id']}_sub"
             # Change only org_lv3 and org_lv4 for the concurrent job
             concurrent_job["org_lv3"] = random.choice(departments.get(org_lv2, ["General"]))
-            concurrent_job["org_lv4"] = random.choice(organizations["org_lv4"])
+            concurrent_job["org_lv4"] = random.choice(organisations["org_lv4"])
             data.append(concurrent_job)
 
     return pd.DataFrame(data)
@@ -311,6 +374,6 @@ st.sidebar.markdown("---")
 
 st.sidebar.markdown("""
 ### Contact
-- **email**: sample@ggmaill.com
-- **X account**: @sampleyatsu
+- **email**: hrdata.generator@gmail.com
+- **X account**: @hrdata_gen
 """)
