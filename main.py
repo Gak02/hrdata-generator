@@ -53,7 +53,7 @@ descriptions = [
     "Annual performance result",
     "Whether the employee is married",
     "Employee's address",
-    "Type of employment (e.g., full-time, part-time)",
+    "Type of employment (e.g., full-time, contract etc)",
     "Functional or professional category for the job",
     "Grade or level of the job within the company"
 ]
