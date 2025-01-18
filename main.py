@@ -23,9 +23,10 @@ You can customise various parameters and download the generated dataset in multi
 fields = [
     "Employee ID",
     "Name",
-    "Age",
+    "Birth date",
     "Gender",
     "Organisation",
+    "Emp Type",
     "Position",
     "Salary",
     "Hire Date",
@@ -34,28 +35,29 @@ fields = [
     "Performance",
     "Marital Status",
     "Address",
-    "Emp Type",
     "Job Category",
-    "Job Grade"
+    "Job Grade",
+    "Base date"
 ]
 
 descriptions = [
     "Unique identifier for each employee",
     "Full name of the employee",
-    "Employee's age",
+    "Employee's birth date",
     "Employee's gender identity",
     "Four-level organisational hierarchy",
+    "Type of employment (full-time, contract, outsourced)",
     "Job title/role",
-    "Annual salary in USD",
+    "Annual salary in JPY",
     "Employment start date",
     "Employment end date (if applicable)",
     "Employee engagement score",
     "Annual performance result",
     "Whether the employee is married",
     "Employee's address",
-    "Type of employment (e.g., full-time, contract etc)",
     "Functional or professional category for the job",
-    "Grade or level of the job within the company"
+    "Grade or level of the job within the company",
+    "Date at when data is generated"
 ]
 
 # Create data frame
@@ -91,12 +93,21 @@ employee_count = st.sidebar.slider(
     help="Select the number of employees to generate data for"
 )
 
+# Sidebar for number of months
+num_months = st.sidebar.slider(
+    "Number of Months",
+    min_value=1,
+    max_value=24,
+    value=1,
+    help="Select the number of months for which data should be generated"
+)
+
 # Field selection
 st.sidebar.subheader("Select Fields to Include")
 include_fields = {
     "Employee ID": st.sidebar.checkbox("Employee ID", value=True),
     "Name": st.sidebar.checkbox("Name", value=True),
-    "Age": st.sidebar.checkbox("Age", value=True),
+    "Birth Date": st.sidebar.checkbox("Birth Date", value=True),
     "Gender": st.sidebar.checkbox("Gender", value=True),
     "Organisation": st.sidebar.checkbox("Organisation Hierarchy", value=True),
     "Position": st.sidebar.checkbox("Position", value=True),
@@ -211,7 +222,9 @@ def generate_employee_data():
     """Generate employee data based on selected parameters"""
     data = []
     current_date = datetime.now()
+    base_employees = []
 
+    # Generate base employee information (common across all months)
     for i in range(employee_count):
         employee = {}
 
@@ -221,8 +234,11 @@ def generate_employee_data():
         if include_fields["Name"]:
             employee["name"] = fake.name()
 
-        if include_fields["Age"]:
-            employee["age"] = random.randint(age_range[0], age_range[1])
+        if include_fields["Birth Date"]:
+            # Generate birth date based on age range from sidebar
+            age = random.randint(age_range[0], age_range[1])
+            birth_date = current_date - timedelta(days=age * 365)
+            employee["birth_date"] = birth_date.strftime("%Y-%m-%d")
 
         if include_fields["Gender"]:
             employee["gender"] = random.choice(["Male", "Female", "Other"])
@@ -230,20 +246,27 @@ def generate_employee_data():
         if include_fields["Organisation"]:
             employee["org_lv1"] = random.choice(organisations["org_lv1"])
             employee["org_lv2"] = random.choices(org_lv2_choices, weights=org_lv2_weights, k=1)[0]
-            # Generate org_lv3 based on org_lv2
-            org_lv2 = employee["org_lv2"]
-            employee["org_lv3"] = random.choice(departments.get(org_lv2, ["General"]))
+            employee["org_lv3"] = random.choice(departments.get(employee["org_lv2"], ["General"]))
             employee["org_lv4"] = random.choice(organisations["org_lv4"])
 
         if include_fields["Position"]:
-            # Assign position based on weighted random selection
             employee["position"] = random.choices(position_choices, weights=position_weights, k=1)[0]
 
-        if include_fields["Salary"]:
-            # Set salary based on position
-            position = employee.get("position", "Staff")
+        if include_fields["Emp Type"]:
+            employee["emp_type"] = random.choices(employee_types, weights=emp_type_weights, k=1)[0]
+
+            # If emp_type is 'outsourced', set specific fields to None and restrict position
+            if employee["emp_type"] == "outsourced":
+                employee["salary"] = None
+                employee["engagement_score"] = None
+                employee["performance"] = None
+                employee["address"] = None
+                employee["job_grade"] = None
+                employee["position"] = "Staff"
+
+        if include_fields["Salary"] and employee["emp_type"] != "outsourced":
             base_salary = random.uniform(salary_range[0], salary_range[1])
-            multiplier = position_hierarchy.get(position, 1)
+            multiplier = position_hierarchy.get(employee["position"], 1)
             employee["salary"] = round(base_salary * multiplier, -3)
 
         if include_fields["Hire Date"]:
@@ -253,16 +276,15 @@ def generate_employee_data():
 
         if include_fields["Resign Date"]:
             if random.random() < 0.05:  # 5% chance of resignation
-                resign_days = random.randint(1, 30)  # Resign within the next month
-                employee["resign_date"] = (current_date + timedelta(days=resign_days)).strftime("%Y-%m-%d")
+                resign_days_ago = random.randint(0, 365)  # Within the past year
+                employee["resign_date"] = (current_date - timedelta(days=resign_days_ago)).strftime("%Y-%m-%d")
             else:
                 employee["resign_date"] = None
 
-        if include_fields["Engagement Score"]:
+        if include_fields["Engagement Score"] and employee["emp_type"] != "outsourced":
             employee["engagement_score"] = round(random.uniform(14, 100), 0)
 
-        if include_fields["Performance"]:
-            # Assign performance based on engagement score
+        if include_fields["Performance"] and employee["emp_type"] != "outsourced":
             engagement_score = employee.get("engagement_score", random.uniform(0, 100))
             for level, threshold in performance_levels.items():
                 if engagement_score >= threshold:
@@ -272,17 +294,9 @@ def generate_employee_data():
         if include_fields["Marital Status"]:
             employee["is_married"] = random.choice([True, False])
 
-        if include_fields.get("Address"):
-            # 80% from capitals、20% from non-capitals
-            if random.random() < 0.8:
-                city = random.choice(capitals)
-            else:
-                city = random.choice(non_capitals)
-
+        if include_fields.get("Address") and employee["emp_type"] != "outsourced":
+            city = random.choice(capitals if random.random() < 0.8 else non_capitals)
             employee["address"] = city
-
-        if include_fields.get("Emp Type"):
-            employee["emp_type"] = random.choices(employee_types, weights=emp_type_weights, k=1)[0]
 
         if include_fields.get("Job Category"):
             org_lv2 = employee.get("org_lv2", "")
@@ -297,33 +311,67 @@ def generate_employee_data():
             else:
                 employee["job_category"] = "General"
 
-        if include_fields.get("Job Grade"):
-            position = employee.get("position", "Staff")
-            employee["job_grade"] = position_to_grade.get(position, "Lv1")
+        if include_fields.get("Job Grade") and employee["emp_type"] != "outsourced":
+            employee["job_grade"] = position_to_grade.get(employee["position"], "Lv1")
 
-        # Nullify Organisation fields for specific positions
-        position = employee.get("position")
-        if position == "C-Level":
-            employee["org_lv2"] = None
-            employee["org_lv3"] = None
-            employee["org_lv4"] = None
-        elif position == "VP":
-            employee["org_lv3"] = None
-            employee["org_lv4"] = None
+        base_employees.append(employee)
 
-        data.append(employee)
+    # Generate data for each month
+    for month_offset in range(num_months):
+        base_date = (current_date - timedelta(days=30 * (num_months - 1 - month_offset))).replace(day=1).strftime("%Y-%m-%d")
+        for base_employee in base_employees:
+            employee = base_employee.copy()
+            employee["base_date"] = base_date
 
-        # Generate subaffiliated job records (兼務)
-        if include_side_jobs and random.random() < 0.35 and position in ["Staff", "Manager", "General Manager"]:
-            concurrent_job = employee.copy()
-            concurrent_job["emp_id"] = f"{concurrent_job['emp_id']}_sub"
-            # Change only org_lv3 and org_lv4 for the concurrent job
-            concurrent_job["org_lv3"] = random.choice(departments.get(org_lv2, ["General"]))
-            concurrent_job["org_lv4"] = random.choice(organisations["org_lv4"])
-            data.append(concurrent_job)
+            # Organisation updates
+            if include_fields["Organisation"]:
+                if employee["emp_type"] == "outsourced":
+                    pass
+                elif employee["position"] == "Staff" and (month_offset % 6 == 0) and random.random() < 0.3:
+                    employee["org_lv3"] = random.choice(departments.get(employee["org_lv2"], ["General"]))
+                    employee["org_lv4"] = random.choice(organisations["org_lv4"])
+
+            # Monthly varying fields
+            if include_fields["Engagement Score"] and employee["emp_type"] != "outsourced":
+                employee["engagement_score"] = round(random.uniform(14, 100), 0)
+
+            # 12 months interval updates for specific fields
+            if month_offset % 12 == 0 and employee["resign_date"] is None:
+                if include_fields["Performance"] and employee["emp_type"] != "outsourced":
+                    engagement_score = employee.get("engagement_score", random.uniform(0, 100))
+                    for level, threshold in performance_levels.items():
+                        if engagement_score >= threshold:
+                            employee["performance"] = level
+                            break
+
+                if include_fields["Salary"] and employee["emp_type"] != "outsourced":
+                    current_salary = employee.get("salary", 0)
+                    performance = employee.get("performance", "C")
+                    if performance == "S":
+                        updated_salary = current_salary * 1.20
+                    elif performance == "A":
+                        updated_salary = current_salary * 1.10
+                    elif performance == "B":
+                        updated_salary = current_salary * 1.05
+                    elif performance == "C":
+                        updated_salary = current_salary * 0.97
+                    else:
+                        updated_salary = current_salary
+                    employee["salary"] = round(updated_salary, -3)
+
+                if include_fields.get("Job Grade"):
+                    employee["job_grade"] = position_to_grade.get(employee["position"], "Lv1")
+
+                # Update base_employee with the latest values
+                base_employee.update({
+                    "performance": employee["performance"],
+                    "salary": employee["salary"],
+                    "job_grade": employee["job_grade"]
+                })
+
+            data.append(employee)
 
     return pd.DataFrame(data)
-
 
 # Generate button
 if st.button("Generate HR Data", type="primary"):
