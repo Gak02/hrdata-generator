@@ -3,4 +3,4 @@ faker
 pandas
 numpy
 openpyxl
-dateutil.relativedelta
+python-dateutil
