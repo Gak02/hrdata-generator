@@ -4,6 +4,8 @@ from faker import Faker
 import random
 from datetime import datetime, timedelta
 import numpy as np
+from dateutil.relativedelta import relativedelta
+from io import BytesIO
 
 # Language-specific data
 LANGUAGE_DATA = {
@@ -20,7 +22,7 @@ LANGUAGE_DATA = {
             "org_lv4": ["Team Alpha", "Team Beta", "Team Gamma", "Team Delta", "Team Epsilon"]
         },
         "positions": {
-            "choices": ["Staff", "Team Lead", "Manager", "Senior Manager", "Director", "VP"],
+            "choices": ["Staff", "Team Lead", "Manager", "General Manager", "VP", "C-level"],
             "weights": [50, 30, 10, 5, 3, 2]
         },
         "emp_types": {
@@ -52,7 +54,7 @@ LANGUAGE_DATA = {
             "org_lv4": ["第一チーム", "第二チーム", "第三チーム", "第四チーム", "第五チーム"]
         },
         "positions": {
-            "choices": ["一般社員", "チームリーダー", "マネージャー", "シニアマネージャー", "部長", "執行役員"],
+            "choices": ["一般社員", "チームリーダー", "マネージャー", "部長", "執行役員", "取締役"],
             "weights": [50, 30, 10, 5, 3, 2]
         },
         "emp_types": {
@@ -77,12 +79,11 @@ LANGUAGE_DATA = {
 TRANSLATIONS = {
     "English": {
         "title": "🪄 HR Data Generator",
-        "description": "This application generates sample HR data for one month with realistic employee information.\nYou can customise various parameters and download the generated dataset in multiple formats.",
+        "description": "This application generates sample HR data for multiple months with realistic employee information.\nYou can customise various parameters and download the generated dataset in multiple formats.",
         "config": "⚙️ Configuration",
         "language": "Select Language",
         "num_employees": "Number of Employees",
         "num_months": "Number of Months",
-        "select_fields": "Select Fields to Include",
         "additional_params": "Additional Parameters",
         "age_range": "Age Range",
         "salary_range": "Salary Range (JPY)",
@@ -123,7 +124,6 @@ TRANSLATIONS = {
         "language": "言語選択",
         "num_employees": "従業員数",
         "num_months": "生成月数",
-        "select_fields": "含めるフィールドを選択",
         "additional_params": "追加パラメータ",
         "age_range": "年齢範囲",
         "salary_range": "給与範囲（円）",
@@ -171,6 +171,7 @@ languages = {
     "English": "en_US",
     "Japanese": "ja_JP"
 }
+
 selected_language = st.selectbox(
     "Language / 言語",
     list(languages.keys())
@@ -188,11 +189,10 @@ st.markdown(t["description"])
 fields = list(t["fields"].keys())
 descriptions = [t["fields"][field] for field in fields]
 
-# Create data frame
+# Create data frame and display field descriptions on the main body
 data = {"Field": fields, "Description": descriptions}
 df = pd.DataFrame(data)
 
-# Display field descriptions on the main body
 st.subheader(t["field_descriptions"])
 st.table(df)
 
@@ -219,10 +219,6 @@ num_months = st.sidebar.slider(
     value=1,
     help=t["num_months"]
 )
-
-# Field selection
-st.sidebar.subheader(t["select_fields"])
-include_fields = {field: st.sidebar.checkbox(field, value=True) for field in fields}
 
 # Additional parameters
 st.sidebar.subheader(t["additional_params"])
@@ -266,7 +262,6 @@ position_to_grade = {
     lang_data["positions"]["choices"][5]: "Lv6"
 }
 
-@st.cache_data
 def generate_employee_data():
     """Generate employee data based on selected parameters"""
     data = []
@@ -277,79 +272,69 @@ def generate_employee_data():
     for i in range(employee_count):
         employee = {}
 
-        if include_fields["Employee ID"]:
-            employee["emp_id"] = f"EMP{str(i+1).zfill(6)}"
+        employee["emp_id"] = f"EMP{str(i+1).zfill(6)}"
+        employee["name"] = fake.name()
 
-        if include_fields["Name"]:
-            employee["name"] = fake.name()
+        age = random.randint(age_range[0], age_range[1])
+        birth_date = current_date - relativedelta(years=age)
+        employee["birth_date"] = birth_date.strftime("%Y-%m-%d")
 
-        if include_fields["Birth date"]:
-            age = random.randint(age_range[0], age_range[1])
-            birth_date = current_date - timedelta(days=age * 365)
-            employee["birth_date"] = birth_date.strftime("%Y-%m-%d")
+        employee["gender"] = random.choice(lang_data["genders"])
 
-        if include_fields["Gender"]:
-            employee["gender"] = random.choice(lang_data["genders"])
+        employee["org_lv1"] = random.choice(lang_data["organizations"]["org_lv1"])
+        employee["org_lv2"] = random.choice(lang_data["organizations"]["org_lv2"])
+        # Map org_lv2 to department key
+        dept_key = "Sales"  # Default
+        if "Engineering" in employee["org_lv2"] or "エンジニアリング" in employee["org_lv2"]:
+            dept_key = "Engineering"
+        elif "HR" in employee["org_lv2"] or "人事" in employee["org_lv2"]:
+            dept_key = "HR"
+        elif "Finance" in employee["org_lv2"] or "財務" in employee["org_lv2"]:
+            dept_key = "Finance"
 
-        if include_fields["Organisation"]:
-            employee["org_lv1"] = random.choice(lang_data["organizations"]["org_lv1"])
-            employee["org_lv2"] = random.choice(lang_data["organizations"]["org_lv2"])
-            # Map org_lv2 to department key
-            dept_key = "Sales"  # Default
-            if "Engineering" in employee["org_lv2"] or "エンジニアリング" in employee["org_lv2"]:
-                dept_key = "Engineering"
-            elif "HR" in employee["org_lv2"] or "人事" in employee["org_lv2"]:
-                dept_key = "HR"
-            elif "Finance" in employee["org_lv2"] or "財務" in employee["org_lv2"]:
-                dept_key = "Finance"
-            
-            org_lv3_options = lang_data["organizations"]["org_lv3"][dept_key]
-            employee["org_lv3"] = random.choice(org_lv3_options)
-            employee["org_lv4"] = random.choice(lang_data["organizations"]["org_lv4"])
+        org_lv3_options = lang_data["organizations"]["org_lv3"][dept_key]
+        employee["org_lv3"] = random.choice(org_lv3_options)
+        employee["org_lv4"] = random.choice(lang_data["organizations"]["org_lv4"])
 
-        if include_fields["Position"]:
-            employee["position"] = random.choices(
-                lang_data["positions"]["choices"],
-                weights=lang_data["positions"]["weights"],
-                k=1
-            )[0]
+        employee["position"] = random.choices(
+            lang_data["positions"]["choices"],
+            weights=lang_data["positions"]["weights"],
+            k=1
+        )[0]
 
-        if include_fields["Emp Type"]:
-            employee["emp_type"] = random.choices(
-                lang_data["emp_types"]["choices"],
-                weights=lang_data["emp_types"]["weights"],
-                k=1
-            )[0]
+        employee["emp_type"] = random.choices(
+            lang_data["emp_types"]["choices"],
+            weights=lang_data["emp_types"]["weights"],
+            k=1
+        )[0]
 
-            if employee["emp_type"] == lang_data["emp_types"]["choices"][2]:  # Temporary/Outsourced
-                employee["salary"] = None
-                employee["engagement_score"] = None
-                employee["performance"] = None
-                employee["address"] = None
-                employee["job_grade"] = None
-                employee["position"] = lang_data["positions"]["choices"][0]  # Staff level
+        if employee["emp_type"] == lang_data["emp_types"]["choices"][2]:  # Temporary/Outsourced
+            employee["salary"] = None
+            employee["engagement_score"] = None
+            employee["performance"] = None
+            employee["address"] = None
+            employee["job_grade"] = None
+            employee["position"] = lang_data["positions"]["choices"][0]  # Staff level
 
-        if include_fields["Salary"] and employee["emp_type"] != lang_data["emp_types"]["choices"][2]:
-            base_salary = random.uniform(salary_range[0], salary_range[1])
-            multiplier = position_hierarchy.get(employee["position"], 1)
-            employee["salary"] = round(base_salary * multiplier, -3)
+        else:
+            hierarchy_multiplier = position_hierarchy.get(employee["position"], 1)
+            normalized_multiplier = (hierarchy_multiplier - 1) / (max(position_hierarchy.values()) - 1)
+            base_salary = salary_range[0] + (salary_range[1] - salary_range[0]) * normalized_multiplier
+            employee["salary"] = round(base_salary, -3)
 
-        if include_fields["Hire Date"]:
+
             max_years_ago = 20
             days_ago = random.randint(0, 365 * max_years_ago)
             employee["hire_date"] = (current_date - timedelta(days=days_ago)).strftime("%Y-%m-%d")
 
-        if include_fields["Resign Date"]:
             if random.random() < 0.05:
                 resign_days_ago = random.randint(0, 365)
                 employee["resign_date"] = (current_date - timedelta(days=resign_days_ago)).strftime("%Y-%m-%d")
             else:
                 employee["resign_date"] = None
 
-        if include_fields["Engagement Score"] and employee["emp_type"] != lang_data["emp_types"]["choices"][2]:
             employee["engagement_score"] = round(random.uniform(14, 100), 0)
 
-        if include_fields["Performance"] and employee["emp_type"] != lang_data["emp_types"]["choices"][2]:
             engagement_score = employee.get("engagement_score", random.uniform(0, 100))
             if engagement_score >= 90:
                 employee["performance"] = "S"
@@ -360,29 +345,18 @@ def generate_employee_data():
             else:
                 employee["performance"] = "C"
 
-        if include_fields["Marital Status"]:
             employee["is_married"] = random.choice([True, False])
 
-        if include_fields.get("Address") and employee["emp_type"] != lang_data["emp_types"]["choices"][2]:
             employee["address"] = random.choice(
                 lang_data["cities"]["major"] if random.random() < 0.8 else lang_data["cities"]["other"]
             )
 
-        if include_fields.get("Job Category"):
-            # Map org_lv2 to job category
-            dept_key = "Sales"  # Default
-            org_lv2 = employee.get("org_lv2", "")
-            if "Engineering" in org_lv2 or "エンジニアリング" in org_lv2:
-                dept_key = "Engineering"
-            elif "HR" in org_lv2 or "人事" in org_lv2:
-                dept_key = "HR"
-            elif "Finance" in org_lv2 or "財務" in org_lv2:
-                dept_key = "Finance"
-            
-            categories = lang_data["job_categories"][dept_key]
-            employee["job_category"] = random.choice(categories)
+            if employee["position"] in ["執行役員", "取締役", "VP", "C-level"]:
+                employee["job_category"] = "Management"
+            else:
+                categories = lang_data["job_categories"][dept_key]
+                employee["job_category"] = random.choice(categories)
 
-        if include_fields.get("Job Grade") and employee["emp_type"] != lang_data["emp_types"]["choices"][2]:
             employee["job_grade"] = position_to_grade.get(employee["position"], "Lv1")
 
         base_employees.append(employee)
@@ -394,29 +368,10 @@ def generate_employee_data():
             employee = base_employee.copy()
             employee["base_date"] = base_date
 
-            if include_fields["Organisation"]:
-                if employee["emp_type"] == lang_data["emp_types"]["choices"][2]:
-                    pass
-                elif employee["position"] == lang_data["positions"]["choices"][0] and (month_offset % 6 == 0) and random.random() < 0.3:
-                    # Map org_lv2 to department key for monthly updates
-                    dept_key = "Sales"  # Default
-                    if "Engineering" in employee["org_lv2"] or "エンジニアリング" in employee["org_lv2"]:
-                        dept_key = "Engineering"
-                    elif "HR" in employee["org_lv2"] or "人事" in employee["org_lv2"]:
-                        dept_key = "HR"
-                    elif "Finance" in employee["org_lv2"] or "財務" in employee["org_lv2"]:
-                        dept_key = "Finance"
-                    
-                    org_lv3_options = lang_data["organizations"]["org_lv3"][dept_key]
-                    employee["org_lv3"] = random.choice(org_lv3_options)
-                    employee["org_lv4"] = random.choice(lang_data["organizations"]["org_lv4"])
-
-            if include_fields["Engagement Score"] and employee["emp_type"] != lang_data["emp_types"]["choices"][2]:
-                employee["engagement_score"] = round(random.uniform(14, 100), 0)
-
-            if month_offset % 12 == 0 and employee["resign_date"] is None:
-                if include_fields["Performance"] and employee["emp_type"] != lang_data["emp_types"]["choices"][2]:
-                    engagement_score = employee.get("engagement_score", random.uniform(0, 100))
+            if employee["emp_type"] != lang_data["emp_types"]["choices"][2]:  # Skip temporary employees for updates
+                if employee.get("engagement_score") and random.random() < 0.3:
+                    employee["engagement_score"] = round(employee["engagement_score"] * random.uniform(0.9, 1.1), 0)
+                    engagement_score = employee["engagement_score"]
                     if engagement_score >= 90:
                         employee["performance"] = "S"
                     elif engagement_score >= 75:
@@ -426,45 +381,32 @@ def generate_employee_data():
                     else:
                         employee["performance"] = "C"
 
-                if include_fields["Salary"] and employee["emp_type"] != lang_data["emp_types"]["choices"][2]:
-                    current_salary = employee.get("salary", 0)
-                    performance = employee.get("performance", "C")
-                    if performance == "S":
-                        updated_salary = current_salary * 1.20
-                    elif performance == "A":
-                        updated_salary = current_salary * 1.10
-                    elif performance == "B":
-                        updated_salary = current_salary * 1.05
-                    elif performance == "C":
-                        updated_salary = current_salary * 0.97
-                    else:
-                        updated_salary = current_salary
-                    employee["salary"] = round(updated_salary, -3)
-
-                if include_fields.get("Job Grade"):
-                    employee["job_grade"] = position_to_grade.get(employee["position"], "Lv1")
-
-                base_employee.update({
-                    "performance": employee["performance"],
-                    "salary": employee["salary"],
-                    "job_grade": employee["job_grade"]
-                })
+                if employee.get("performance") and random.random() < 0.2:
+                    current_salary = employee["salary"]
+                    if employee["performance"] == "S":
+                        employee["salary"] = round(current_salary * 1.1, -3)
+                    elif employee["performance"] == "A":
+                        employee["salary"] = round(current_salary * 1.05, -3)
+                    elif employee["performance"] == "B":
+                        employee["salary"] = round(current_salary * 1.02, -3)
+                    elif employee["performance"] == "C":
+                        employee["salary"] = round(current_salary * 0.98, -3)
 
             data.append(employee)
 
     return pd.DataFrame(data)
 
+
 # Generate button
 if st.button(t["generate_button"], type="primary"):
     df = generate_employee_data()
-    
     st.subheader(t["data_preview"])
     st.dataframe(df.head(10))
-    
+
     st.subheader(t["download_options"])
-    
+
     col1, col2, col3 = st.columns(3)
-    
+
     csv = df.to_csv(index=False)
     col1.download_button(
         label=t["download_csv"],
@@ -472,8 +414,7 @@ if st.button(t["generate_button"], type="primary"):
         file_name="hr_data.csv",
         mime="text/csv"
     )
-    
-    from io import BytesIO
+
     excel_buffer = BytesIO()
     with pd.ExcelWriter(excel_buffer, engine="openpyxl") as writer:
         df.to_excel(writer, index=False)
@@ -484,7 +425,7 @@ if st.button(t["generate_button"], type="primary"):
         file_name="hr_data.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
-    
+
     json = df.to_json(orient="records")
     col3.download_button(
         label=t["download_json"],
