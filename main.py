@@ -79,7 +79,7 @@ LANGUAGE_DATA = {
 TRANSLATIONS = {
     "English": {
         "title": "🪄 HR Data Generator",
-        "description": "This application generates sample HR data for multiple months with realistic employee information.\nYou can customise various parameters and download the generated dataset in multiple formats.",
+        "description": "This app generates sample HR data for 1-24 months with realistic employee information.\nYou can customise various parameters and download the generated dataset in multiple formats.",
         "config": "⚙️ Configuration",
         "language": "Select Language",
         "num_employees": "Number of Employees",
@@ -113,13 +113,13 @@ TRANSLATIONS = {
             "Marital Status": "Whether the employee is married",
             "Address": "Employee's address",
             "Job Category": "Functional or professional category for the job",
-            "Job Grade": "Grade or level of the job within the company",
+            "Job Grade": "Grade of the job within the company",
             "Base date": "Date at when data is generated"
         }
     },
     "Japanese": {
         "title": "🪄 人事データ生成ツール",
-        "description": "このアプリケーションは、1~24ヶ月分の現実的な従業員情報を生成します。\nさまざまなパラメータをカスタマイズして、生成したデータセットを複数の形式でダウンロードできます。",
+        "description": "このアプリは、1~24ヶ月分の現実的な従業員情報を生成します。\nさまざまなパラメータをカスタマイズして、生成したデータセットを複数の形式でダウンロードできます。",
         "config": "⚙️ 設定",
         "language": "言語選択",
         "num_employees": "従業員数",
