@@ -7,6 +7,21 @@ import numpy as np
 from dateutil.relativedelta import relativedelta
 from io import BytesIO
 
+# Constants
+PERFORMANCE_THRESHOLDS = {
+    "S": 90,
+    "A": 75,
+    "B": 50,
+    "C": 0
+}
+
+SALARY_ADJUSTMENT_RATES = {
+    "S": 1.20,
+    "A": 1.10,
+    "B": 1.05,
+    "C": 0.97
+}
+
 # Language-specific data
 LANGUAGE_DATA = {
     "English": {
@@ -23,7 +38,12 @@ LANGUAGE_DATA = {
         },
         "positions": {
             "choices": ["Staff", "Team Lead", "Manager", "General Manager", "VP", "C-level"],
-            "weights": [50, 30, 10, 5, 3, 2]
+            "weights": [50, 30, 10, 5, 3, 2],
+            "hierarchy": {
+                "executive": ["VP", "C-level"],
+                "director": ["General Manager"],
+                "manager": ["Manager"]
+            }
         },
         "emp_types": {
             "choices": ["Full-time", "Contract", "Temporary"],
@@ -55,7 +75,12 @@ LANGUAGE_DATA = {
         },
         "positions": {
             "choices": ["一般社員", "チームリーダー", "マネージャー", "部長", "執行役員", "取締役"],
-            "weights": [50, 30, 10, 5, 3, 2]
+            "weights": [50, 30, 10, 5, 3, 2],
+            "hierarchy": {
+                "executive": ["執行役員", "取締役"],
+                "director": ["部長"],
+                "manager": ["マネージャー"]
+            }
         },
         "emp_types": {
             "choices": ["正社員", "契約社員", "派遣社員"],
@@ -79,7 +104,7 @@ LANGUAGE_DATA = {
 TRANSLATIONS = {
     "English": {
         "title": "🪄 HR Data Generator",
-        "description": "This app generates sample HR data for 1-24 months with realistic employee information.\nYou can customise various parameters and download the generated dataset in multiple formats.",
+        "description": "This application generates sample HR data for multiple months with realistic employee information.\nYou can customise various parameters and download the generated dataset in multiple formats.",
         "config": "⚙️ Configuration",
         "language": "Select Language",
         "num_employees": "Number of Employees",
@@ -113,13 +138,13 @@ TRANSLATIONS = {
             "Marital Status": "Whether the employee is married",
             "Address": "Employee's address",
             "Job Category": "Functional or professional category for the job",
-            "Job Grade": "Grade of the job within the company",
+            "Job Grade": "Grade or level of the job within the company",
             "Base date": "Date at when data is generated"
         }
     },
     "Japanese": {
         "title": "🪄 人事データ生成ツール",
-        "description": "このアプリは、1~24ヶ月分の現実的な従業員情報を生成します。\nさまざまなパラメータをカスタマイズして、生成したデータセットを複数の形式でダウンロードできます。",
+        "description": "このアプリケーションは、1~24ヶ月分の現実的な従業員情報を生成します。\nさまざまなパラメータをカスタマイズして、生成したデータセットを複数の形式でダウンロードできます。",
         "config": "⚙️ 設定",
         "language": "言語選択",
         "num_employees": "従業員数",
@@ -159,219 +184,173 @@ TRANSLATIONS = {
     }
 }
 
-# Set page configuration
-st.set_page_config(
-    page_title="HR Data Generator",
-    page_icon="👥",
-    layout="wide"
-)
+def setup_page():
+    st.set_page_config(
+        page_title="HR Data Generator",
+        page_icon="👥",
+        layout="wide"
+    )
 
-# Language selection at the very top
-languages = {
-    "English": "en_US",
-    "Japanese": "ja_JP"
-}
+def get_department_key(org_lv2):
+    if "Engineering" in org_lv2 or "エンジニアリング" in org_lv2:
+        return "Engineering"
+    elif "HR" in org_lv2 or "人事" in org_lv2:
+        return "HR"
+    elif "Finance" in org_lv2 or "財務" in org_lv2:
+        return "Finance"
+    return "Sales"
 
-selected_language = st.selectbox(
-    "Language / 言語",
-    list(languages.keys())
-)
+def get_performance_level(engagement_score):
+    for level, threshold in PERFORMANCE_THRESHOLDS.items():
+        if engagement_score >= threshold:
+            return level
+    return "C"
 
-# Get translations and language-specific data
-t = TRANSLATIONS[selected_language]
-lang_data = LANGUAGE_DATA[selected_language]
+def adjust_organization_by_position(employee, position_data, position):
+    if position in position_data["hierarchy"]["executive"]:
+        employee["org_lv2"] = None
+        employee["org_lv3"] = None
+        employee["org_lv4"] = None
+    elif position in position_data["hierarchy"]["director"]:
+        employee["org_lv3"] = None
+        employee["org_lv4"] = None
+    elif position in position_data["hierarchy"]["manager"]:
+        employee["org_lv4"] = None
+    return employee
 
-# Application title and description
-st.title(t["title"])
-st.markdown(t["description"])
+def calculate_salary(base_range, position_hierarchy, position):
+    """Calculate salary within the specified range based on position hierarchy"""
+    min_salary, max_salary = base_range
+    position_level = position_hierarchy.get(position, 1)
+    
+    # Calculate the percentage through the range based on position level
+    min_level = min(position_hierarchy.values())
+    max_level = max(position_hierarchy.values())
+    level_range = max_level - min_level
+    
+    if level_range == 0:
+        percentage = 0
+    else:
+        percentage = (position_level - min_level) / level_range
+    
+    # Calculate salary ensuring it stays within the specified range
+    salary = min_salary + (max_salary - min_salary) * percentage
+    return round(salary, -3)
 
-# Field names and descriptions for the selected language
-fields = list(t["fields"].keys())
-descriptions = [t["fields"][field] for field in fields]
-
-# Create data frame and display field descriptions on the main body
-data = {"Field": fields, "Description": descriptions}
-df = pd.DataFrame(data)
-
-st.subheader(t["field_descriptions"])
-st.table(df)
-
-# Sidebar for parameters
-st.sidebar.header(t["config"])
-
-# Initialize Faker with selected locale
-fake = Faker(languages[selected_language])
-
-# Employee count selection
-employee_count = st.sidebar.slider(
-    t["num_employees"],
-    min_value=200,
-    max_value=500,
-    value=300,
-    help=t["num_employees"]
-)
-
-# Sidebar for number of months
-num_months = st.sidebar.slider(
-    t["num_months"],
-    min_value=1,
-    max_value=24,
-    value=1,
-    help=t["num_months"]
-)
-
-# Additional parameters
-st.sidebar.subheader(t["additional_params"])
-age_range = st.sidebar.slider(
-    t["age_range"],
-    min_value=18,
-    max_value=65,
-    value=(25, 55)
-)
-
-salary_range = st.sidebar.slider(
-    t["salary_range"],
-    min_value=3000000,
-    max_value=30000000,
-    value=(4000000, 10000000)
-)
-
-include_side_jobs = st.sidebar.checkbox(
-    t["include_side_jobs"],
-    value=False,
-    help=t["side_jobs_help"]
-)
-
-# Define position hierarchy and corresponding salary multiplier
-position_hierarchy = {
-    lang_data["positions"]["choices"][0]: 1,
-    lang_data["positions"]["choices"][1]: 1.2,
-    lang_data["positions"]["choices"][2]: 1.5,
-    lang_data["positions"]["choices"][3]: 2,
-    lang_data["positions"]["choices"][4]: 2.5,
-    lang_data["positions"]["choices"][5]: 3
-}
-
-# job grade mapping
-position_to_grade = {
-    lang_data["positions"]["choices"][0]: "Lv1",
-    lang_data["positions"]["choices"][1]: "Lv2",
-    lang_data["positions"]["choices"][2]: "Lv3",
-    lang_data["positions"]["choices"][3]: "Lv4",
-    lang_data["positions"]["choices"][4]: "Lv5",
-    lang_data["positions"]["choices"][5]: "Lv6"
-}
+def adjust_salary_by_performance(current_salary, performance):
+    adjustment_rate = SALARY_ADJUSTMENT_RATES.get(performance, 1.0)
+    return round(current_salary * adjustment_rate, -3)
 
 def generate_employee_data():
-    """Generate employee data based on selected parameters"""
     data = []
     current_date = datetime.now()
     base_employees = []
 
-    # Generate base employee information (common across all months)
+    position_hierarchy = {
+        lang_data["positions"]["choices"][i]: (i + 1) / 2
+        for i in range(len(lang_data["positions"]["choices"]))
+    }
+
+    position_to_grade = {
+        lang_data["positions"]["choices"][i]: f"Lv{i+1}"
+        for i in range(len(lang_data["positions"]["choices"]))
+    }
+
+    # Generate base employee data
     for i in range(employee_count):
         employee = {}
-
+        
+        # Basic information
         employee["emp_id"] = f"EMP{str(i+1).zfill(6)}"
         employee["name"] = fake.name()
-
+        
         age = random.randint(age_range[0], age_range[1])
         birth_date = current_date - relativedelta(years=age)
         employee["birth_date"] = birth_date.strftime("%Y-%m-%d")
-
+        
         employee["gender"] = random.choice(lang_data["genders"])
-
+        
+        # Organisation
         employee["org_lv1"] = random.choice(lang_data["organizations"]["org_lv1"])
         employee["org_lv2"] = random.choice(lang_data["organizations"]["org_lv2"])
-        # Map org_lv2 to department key
-        dept_key = "Sales"  # Default
-        if "Engineering" in employee["org_lv2"] or "エンジニアリング" in employee["org_lv2"]:
-            dept_key = "Engineering"
-        elif "HR" in employee["org_lv2"] or "人事" in employee["org_lv2"]:
-            dept_key = "HR"
-        elif "Finance" in employee["org_lv2"] or "財務" in employee["org_lv2"]:
-            dept_key = "Finance"
-
+        dept_key = get_department_key(employee["org_lv2"])
+        
         org_lv3_options = lang_data["organizations"]["org_lv3"][dept_key]
         employee["org_lv3"] = random.choice(org_lv3_options)
         employee["org_lv4"] = random.choice(lang_data["organizations"]["org_lv4"])
-
+        
+        # Position and employment type
         employee["position"] = random.choices(
             lang_data["positions"]["choices"],
             weights=lang_data["positions"]["weights"],
             k=1
         )[0]
-
+        
         employee["emp_type"] = random.choices(
             lang_data["emp_types"]["choices"],
             weights=lang_data["emp_types"]["weights"],
             k=1
         )[0]
-
-        if employee["emp_type"] == lang_data["emp_types"]["choices"][2]:  # Temporary/Outsourced
-            employee["salary"] = None
-            employee["engagement_score"] = None
-            employee["performance"] = None
-            employee["address"] = None
-            employee["job_grade"] = None
+        
+        # Adjust organisation based on position
+        employee = adjust_organization_by_position(employee, lang_data["positions"], employee["position"])
+        
+        # Handle contract employees
+        if employee["emp_type"] == lang_data["emp_types"]["choices"][1]:  # Contract
             employee["position"] = lang_data["positions"]["choices"][0]  # Staff level
-
+        
+        # Handle temporary employees
+        if employee["emp_type"] == lang_data["emp_types"]["choices"][2]:  # Temporary
+            employee = {**employee, **{
+                "salary": None,
+                "engagement_score": None,
+                "performance": None,
+                "address": None,
+                "job_grade": None,
+                "position": lang_data["positions"]["choices"][0]
+            }}
         else:
-            hierarchy_multiplier = position_hierarchy.get(employee["position"], 1)
-            normalized_multiplier = (hierarchy_multiplier - 1) / (max(position_hierarchy.values()) - 1)
-            base_salary = salary_range[0] + (salary_range[1] - salary_range[0]) * normalized_multiplier
-            employee["salary"] = round(base_salary, -3)
-
-
-            max_years_ago = 20
-            days_ago = random.randint(0, 365 * max_years_ago)
-            employee["hire_date"] = (current_date - timedelta(days=days_ago)).strftime("%Y-%m-%d")
-
-            if random.random() < 0.05:
-                resign_days_ago = random.randint(0, 365)
-                employee["resign_date"] = (current_date - timedelta(days=resign_days_ago)).strftime("%Y-%m-%d")
-            else:
-                employee["resign_date"] = None
-
+            # Regular employee data
+            employee["salary"] = calculate_salary(salary_range, position_hierarchy, employee["position"])
             employee["engagement_score"] = round(random.uniform(14, 100), 0)
-
-            engagement_score = employee.get("engagement_score", random.uniform(0, 100))
-            if engagement_score >= 90:
-                employee["performance"] = "S"
-            elif engagement_score >= 75:
-                employee["performance"] = "A"
-            elif engagement_score >= 50:
-                employee["performance"] = "B"
-            else:
-                employee["performance"] = "C"
-
-            employee["is_married"] = random.choice([True, False])
-
+            employee["performance"] = get_performance_level(employee["engagement_score"])
+            
             employee["address"] = random.choice(
                 lang_data["cities"]["major"] if random.random() < 0.8 else lang_data["cities"]["other"]
             )
-
-            if employee["position"] in ["執行役員", "取締役", "VP", "C-level"]:
+            
+            if employee["position"] in lang_data["positions"]["hierarchy"]["executive"]:
                 employee["job_category"] = "Management"
             else:
-                categories = lang_data["job_categories"][dept_key]
-                employee["job_category"] = random.choice(categories)
-
+                employee["job_category"] = random.choice(lang_data["job_categories"][dept_key])
+            
             employee["job_grade"] = position_to_grade.get(employee["position"], "Lv1")
-
+        
+        # Common fields for all employees
+        employee["hire_date"] = (current_date - timedelta(days=random.randint(0, 365 * 20))).strftime("%Y-%m-%d")
+        employee["resign_date"] = (current_date - timedelta(days=random.randint(0, 365))).strftime("%Y-%m-%d") if random.random() < 0.05 else None
+        employee["is_married"] = random.choice([True, False])
+        
         base_employees.append(employee)
 
-    # Generate data for each month
+    # Generate monthly data
     for month_offset in range(num_months):
         base_date = (current_date - timedelta(days=30 * (num_months - 1 - month_offset))).replace(day=1).strftime("%Y-%m-%d")
+        
         for base_employee in base_employees:
+            # resigned employee data not generating after resign date
+            if base_employee["resign_date"] and base_date > base_employee["resign_date"]:
+                continue
+
+            # Generate employee data for each month
             employee = base_employee.copy()
             employee["base_date"] = base_date
 
-            if employee["emp_type"] != lang_data["emp_types"]["choices"][2]:  # Skip temporary employees for updates
-                if employee.get("engagement_score") and random.random() < 0.3:
-                    employee["engagement_score"] = round(employee["engagement_score"] * random.uniform(0.9, 1.1), 0)
-                    engagement_score = employee["engagement_score"]
+            # Update performance and salary every 12 months
+            if month_offset % 12 == 0 and employee["resign_date"] is None:
+                if employee["emp_type"] != lang_data["emp_types"]["choices"][2]:  # Not temporary
+                    # Update performance
+                    engagement_score = employee.get("engagement_score", random.uniform(0, 100))
                     if engagement_score >= 90:
                         employee["performance"] = "S"
                     elif engagement_score >= 75:
@@ -381,62 +360,107 @@ def generate_employee_data():
                     else:
                         employee["performance"] = "C"
 
-                if employee.get("performance") and random.random() < 0.2:
-                    current_salary = employee["salary"]
-                    if employee["performance"] == "S":
-                        employee["salary"] = round(current_salary * 1.1, -3)
-                    elif employee["performance"] == "A":
-                        employee["salary"] = round(current_salary * 1.05, -3)
-                    elif employee["performance"] == "B":
-                        employee["salary"] = round(current_salary * 1.02, -3)
-                    elif employee["performance"] == "C":
-                        employee["salary"] = round(current_salary * 0.98, -3)
+                    # Update salary
+                    current_salary = employee.get("salary", 0)
+                    performance = employee.get("performance", "C")
+                    if performance == "S":
+                        updated_salary = current_salary * 1.20
+                    elif performance == "A":
+                        updated_salary = current_salary * 1.10
+                    elif performance == "B":
+                        updated_salary = current_salary * 1.05
+                    elif performance == "C":
+                        updated_salary = current_salary * 0.97
+                    else:
+                        updated_salary = current_salary
+                    employee["salary"] = round(updated_salary, -3)
 
+                    # Update the base data based on the above process
+                    base_employee.update({
+                        "performance": employee["performance"],
+                        "salary": employee["salary"]
+                    })
+
+            # Update engagement score 
+            if employee["emp_type"] != lang_data["emp_types"]["choices"][2] and employee.get("engagement_score"):
+                if random.random() < 0.3:
+                    employee["engagement_score"] = round(
+                        min(max(employee["engagement_score"] * random.uniform(0.9, 1.1), 0), 100),
+                        0
+                    )
+            
             data.append(employee)
 
     return pd.DataFrame(data)
 
-
-# Generate button
-if st.button(t["generate_button"], type="primary"):
-    df = generate_employee_data()
-    st.subheader(t["data_preview"])
-    st.dataframe(df.head(10))
-
-    st.subheader(t["download_options"])
-
-    col1, col2, col3 = st.columns(3)
-
-    csv = df.to_csv(index=False)
-    col1.download_button(
-        label=t["download_csv"],
-        data=csv,
-        file_name="hr_data.csv",
-        mime="text/csv"
+def main():
+    setup_page()
+    
+    # Language selection
+    global selected_language, t, lang_data
+    selected_language = st.selectbox(
+        "Language / 言語",
+        list(LANGUAGE_DATA.keys())
     )
+    
+    t = TRANSLATIONS[selected_language]
+    lang_data = LANGUAGE_DATA[selected_language]
+    
+    # Initialise Faker
+    global fake
+    fake = Faker({"English": "en_US", "Japanese": "ja_JP"}[selected_language])
+    
+    # UI Setup
+    st.title(t["title"])
+    st.markdown(t["description"])
+    
+    # Field descriptions
+    fields = list(t["fields"].keys())
+    descriptions = [t["fields"][field] for field in fields]
+    df_desc = pd.DataFrame({"Field": fields, "Description": descriptions})
+    st.subheader(t["field_descriptions"])
+    st.table(df_desc)
+    
+    # Sidebar configuration
+    st.sidebar.header(t["config"])
+    
+    global employee_count, num_months, age_range, salary_range, include_side_jobs
+    employee_count = st.sidebar.slider(t["num_employees"], 200, 500, 300)
+    num_months = st.sidebar.slider(t["num_months"], 1, 24, 1)
+    
+    st.sidebar.subheader(t["additional_params"])
+    age_range = st.sidebar.slider(t["age_range"], 18, 65, (25, 55))
+    salary_range = st.sidebar.slider(t["salary_range"], 3000000, 30000000, (4000000, 10000000))
+    include_side_jobs = st.sidebar.checkbox(t["include_side_jobs"], False, help=t["side_jobs_help"])
+    
+    # Generate data
+    if st.button(t["generate_button"], type="primary"):
+        df = generate_employee_data()
+        st.subheader(t["data_preview"])
+        st.dataframe(df.head(10))
+        
+        st.subheader(t["download_options"])
+        col1, col2, col3 = st.columns(3)
+        
+        # Download options
+        csv = df.to_csv(index=False)
+        col1.download_button(t["download_csv"], csv, "hr_data.csv", "text/csv")
+        
+        excel_buffer = BytesIO()
+        with pd.ExcelWriter(excel_buffer, engine="openpyxl") as writer:
+            df.to_excel(writer, index=False)
+        col2.download_button(t["download_excel"], excel_buffer.getvalue(), "hr_data.xlsx")
+        
+        json = df.to_json(orient="records")
+        col3.download_button(t["download_json"], json, "hr_data.json", "application/json")
+    
+    # Footer
+    st.sidebar.markdown("---")
+    st.sidebar.markdown(f"""
+    ### {t["contact"]}
+    - **email**: hrdata.generator@gmail.com
+    - **X account**: @hrdata_gen
+    """)
 
-    excel_buffer = BytesIO()
-    with pd.ExcelWriter(excel_buffer, engine="openpyxl") as writer:
-        df.to_excel(writer, index=False)
-    excel_data = excel_buffer.getvalue()
-    col2.download_button(
-        label=t["download_excel"],
-        data=excel_data,
-        file_name="hr_data.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
-
-    json = df.to_json(orient="records")
-    col3.download_button(
-        label=t["download_json"],
-        data=json,
-        file_name="hr_data.json",
-        mime="application/json"
-    )
-
-st.sidebar.markdown("---")
-st.sidebar.markdown(f"""
-### {t["contact"]}
-- **email**: hrdata.generator@gmail.com
-- **X account**: @hrdata_gen
-""")
+if __name__ == "__main__":
+    main()
