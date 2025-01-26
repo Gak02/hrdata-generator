@@ -112,8 +112,6 @@ TRANSLATIONS = {
         "additional_params": "Additional Parameters",
         "age_range": "Age Range",
         "salary_range": "Salary Range (JPY)",
-        "include_side_jobs": "Include subaffiliated jobs",
-        "side_jobs_help": "Generate additional subaffiliated job records for some employees",
         "generate_button": "Generate HR Data",
         "data_preview": "Data Preview",
         "download_options": "Download Options",
@@ -152,8 +150,6 @@ TRANSLATIONS = {
         "additional_params": "追加パラメータ",
         "age_range": "年齢範囲",
         "salary_range": "給与範囲（円）",
-        "include_side_jobs": "兼務を含める",
-        "side_jobs_help": "一部の従業員の兼務レコードを生成します",
         "generate_button": "データを生成",
         "data_preview": "データプレビュー",
         "download_options": "ダウンロードオプション",
@@ -424,14 +420,13 @@ def main():
     # Sidebar configuration
     st.sidebar.header(t["config"])
     
-    global employee_count, num_months, age_range, salary_range, include_side_jobs
+    global employee_count, num_months, age_range, salary_range
     employee_count = st.sidebar.slider(t["num_employees"], 200, 500, 300)
     num_months = st.sidebar.slider(t["num_months"], 1, 24, 1)
     
     st.sidebar.subheader(t["additional_params"])
     age_range = st.sidebar.slider(t["age_range"], 18, 65, (25, 55))
     salary_range = st.sidebar.slider(t["salary_range"], 3000000, 30000000, (4000000, 10000000))
-    include_side_jobs = st.sidebar.checkbox(t["include_side_jobs"], False, help=t["side_jobs_help"])
     
     # Generate data
     if st.button(t["generate_button"], type="primary"):
