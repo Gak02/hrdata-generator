@@ -234,228 +234,305 @@ def calculate_salary(base_range, position_hierarchy, position):
     return round(salary, -3)
 
 def adjust_salary_by_performance(current_salary, performance):
+    """Adjust salary based on performance evaluation"""
     adjustment_rate = SALARY_ADJUSTMENT_RATES.get(performance, 1.0)
     return round(current_salary * adjustment_rate, -3)
 
+def update_performance_based_on_engagement(engagement_score):
+    """Determine performance level based on engagement score"""
+    if engagement_score >= 90:
+        return "S"
+    elif engagement_score >= 75:
+        return "A"
+    elif engagement_score >= 50:
+        return "B"
+    else:
+        return "C"
+
 def generate_employee_data():
-    data = []
-    current_date = datetime.now()
-    base_employees = []
+    try:
+        data = []
+        current_date = datetime.now()
+        base_employees = []
 
-    position_hierarchy = {
-        lang_data["positions"]["choices"][i]: (i + 1) / 2
-        for i in range(len(lang_data["positions"]["choices"]))
-    }
+        position_hierarchy = {
+            lang_data["positions"]["choices"][i]: (i + 1) / 2
+            for i in range(len(lang_data["positions"]["choices"]))
+        }
 
-    position_to_grade = {
-        lang_data["positions"]["choices"][i]: f"Lv{i+1}"
-        for i in range(len(lang_data["positions"]["choices"]))
-    }
+        position_to_grade = {
+            lang_data["positions"]["choices"][i]: f"Lv{i+1}"
+            for i in range(len(lang_data["positions"]["choices"]))
+        }
 
-    # Generate base employee data
-    for i in range(employee_count):
-        employee = {}
+        # 生成する従業員数を確保するためのカウンター
+        employee_id_counter = 1
+        attempts = 0
+        max_attempts = employee_count * 2  # 無限ループ防止用の最大試行回数
         
-        # Basic information
-        employee["emp_id"] = f"EMP{str(i+1).zfill(6)}"
-        employee["name"] = fake.name()
-        
-        age = random.randint(age_range[0], age_range[1])
-        birth_date = current_date - relativedelta(years=age)
-        employee["birth_date"] = birth_date.strftime("%Y-%m-%d")
-        
-        employee["gender"] = random.choice(lang_data["genders"])
-        
-        # Organisation
-        employee["org_lv1"] = random.choice(lang_data["organizations"]["org_lv1"])
-        employee["org_lv2"] = random.choice(lang_data["organizations"]["org_lv2"])
-        dept_key = get_department_key(employee["org_lv2"])
-        
-        org_lv3_options = lang_data["organizations"]["org_lv3"][dept_key]
-        employee["org_lv3"] = random.choice(org_lv3_options)
-        employee["org_lv4"] = random.choice(lang_data["organizations"]["org_lv4"])
-        
-        # Position and employment type
-        employee["position"] = random.choices(
-            lang_data["positions"]["choices"],
-            weights=lang_data["positions"]["weights"],
-            k=1
-        )[0]
-        
-        employee["emp_type"] = random.choices(
-            lang_data["emp_types"]["choices"],
-            weights=lang_data["emp_types"]["weights"],
-            k=1
-        )[0]
-        
-        # Adjust organisation based on position
-        employee = adjust_organization_by_position(employee, lang_data["positions"], employee["position"])
-        
-        # Handle contract employees
-        if employee["emp_type"] == lang_data["emp_types"]["choices"][1]:  # Contract
-            employee["position"] = lang_data["positions"]["choices"][0]  # Staff level
-        
-        # Handle temporary employees
-        if employee["emp_type"] == lang_data["emp_types"]["choices"][2]:  # Temporary
-            employee = {**employee, **{
-                "salary": None,
-                "engagement_score": None,
-                "performance": None,
-                "address": None,
-                "job_grade": None,
-                "position": lang_data["positions"]["choices"][0]
-            }}
-        else:
-            # Regular employee data
-            employee["salary"] = calculate_salary(salary_range, position_hierarchy, employee["position"])
-            employee["engagement_score"] = round(random.uniform(14, 100), 0)
-            employee["performance"] = get_performance_level(employee["engagement_score"])
-            
-            employee["address"] = random.choice(
-                lang_data["cities"]["major"] if random.random() < 0.8 else lang_data["cities"]["other"]
-            )
-            
-            if employee["position"] in lang_data["positions"]["hierarchy"]["executive"]:
-                employee["job_category"] = "Management"
-            else:
-                employee["job_category"] = random.choice(lang_data["job_categories"][dept_key])
-            
-            employee["job_grade"] = position_to_grade.get(employee["position"], "Lv1")
-        
-        # Common fields for all employees
-        employee["hire_date"] = (current_date - timedelta(days=random.randint(0, 365 * 20))).strftime("%Y-%m-%d")
-        employee["resign_date"] = (current_date - timedelta(days=random.randint(0, 365))).strftime("%Y-%m-%d") if random.random() < 0.05 else None
-        employee["is_married"] = random.choice([True, False])
-        
-        base_employees.append(employee)
-
-    # Generate monthly data
-    for month_offset in range(num_months):
-        base_date = (current_date - timedelta(days=30 * (num_months - 1 - month_offset))).replace(day=1).strftime("%Y-%m-%d")
-        
-        for base_employee in base_employees:
-            # resigned employee data not generating after resign date
-            if base_employee["resign_date"] and base_date > base_employee["resign_date"]:
-                continue
-
-            # Generate employee data for each month
-            employee = base_employee.copy()
-            employee["base_date"] = base_date
-
-            # Update performance and salary every 12 months
-            if month_offset % 12 == 0 and employee["resign_date"] is None:
-                if employee["emp_type"] != lang_data["emp_types"]["choices"][2]:  # Not temporary
-                    # Update performance
-                    engagement_score = employee.get("engagement_score", random.uniform(0, 100))
-                    if engagement_score >= 90:
-                        employee["performance"] = "S"
-                    elif engagement_score >= 75:
-                        employee["performance"] = "A"
-                    elif engagement_score >= 50:
-                        employee["performance"] = "B"
-                    else:
-                        employee["performance"] = "C"
-
-                    # Update salary
-                    current_salary = employee.get("salary", 0)
-                    performance = employee.get("performance", "C")
-                    if performance == "S":
-                        updated_salary = current_salary * 1.20
-                    elif performance == "A":
-                        updated_salary = current_salary * 1.10
-                    elif performance == "B":
-                        updated_salary = current_salary * 1.05
-                    elif performance == "C":
-                        updated_salary = current_salary * 0.97
-                    else:
-                        updated_salary = current_salary
-                    employee["salary"] = round(updated_salary, -3)
-
-                    # Update the base data based on the above process
-                    base_employee.update({
-                        "performance": employee["performance"],
-                        "salary": employee["salary"]
-                    })
-
-            # Update engagement score 
-            if employee["emp_type"] != lang_data["emp_types"]["choices"][2] and employee.get("engagement_score"):
-                if random.random() < 0.3:
-                    employee["engagement_score"] = round(
-                        min(max(employee["engagement_score"] * random.uniform(0.9, 1.1), 0), 100),
-                        0
+        # Generate base employee data
+        while len(base_employees) < employee_count and attempts < max_attempts:
+            try:
+                attempts += 1
+                employee = {}
+                
+                # Basic information
+                employee["emp_id"] = f"EMP{str(employee_id_counter).zfill(6)}"
+                employee_id_counter += 1
+                employee["name"] = fake.name()
+                
+                age = random.randint(age_range[0], age_range[1])
+                birth_date = current_date - relativedelta(years=age)
+                employee["birth_date"] = birth_date.strftime("%Y-%m-%d")
+                
+                employee["gender"] = random.choice(lang_data["genders"])
+                
+                # Organisation
+                employee["org_lv1"] = random.choice(lang_data["organizations"]["org_lv1"])
+                employee["org_lv2"] = random.choice(lang_data["organizations"]["org_lv2"])
+                dept_key = get_department_key(employee["org_lv2"])
+                
+                org_lv3_options = lang_data["organizations"]["org_lv3"].get(dept_key, [])
+                if not org_lv3_options:
+                    # デフォルトの部門を使用
+                    dept_key = "Sales"
+                    org_lv3_options = lang_data["organizations"]["org_lv3"].get(dept_key, ["Default Department"])
+                
+                employee["org_lv3"] = random.choice(org_lv3_options)
+                employee["org_lv4"] = random.choice(lang_data["organizations"]["org_lv4"])
+                
+                # Position and employment type
+                employee["position"] = random.choices(
+                    lang_data["positions"]["choices"],
+                    weights=lang_data["positions"]["weights"],
+                    k=1
+                )[0]
+                
+                employee["emp_type"] = random.choices(
+                    lang_data["emp_types"]["choices"],
+                    weights=lang_data["emp_types"]["weights"],
+                    k=1
+                )[0]
+                
+                # Adjust organisation based on position
+                employee = adjust_organization_by_position(employee, lang_data["positions"], employee["position"])
+                
+                # Handle contract employees
+                if employee["emp_type"] == lang_data["emp_types"]["choices"][1]:  # Contract
+                    employee["position"] = lang_data["positions"]["choices"][0]  # Staff level
+                
+                # Handle temporary employees
+                if employee["emp_type"] == lang_data["emp_types"]["choices"][2]:  # Temporary
+                    employee = {**employee, **{
+                        "salary": None,
+                        "engagement_score": None,
+                        "performance": None,
+                        "address": None,
+                        "job_grade": None,
+                        "position": lang_data["positions"]["choices"][0]
+                    }}
+                else:
+                    # Regular employee data
+                    try:
+                        employee["salary"] = calculate_salary(salary_range, position_hierarchy, employee["position"])
+                    except Exception as e:
+                        st.warning(f"給与計算中にエラーが発生しました: {str(e)}。デフォルト値を使用します。")
+                        employee["salary"] = salary_range[0]  # デフォルト値を使用
+                        
+                    employee["engagement_score"] = round(random.uniform(14, 100), 0)
+                    employee["performance"] = get_performance_level(employee["engagement_score"])
+                    
+                    employee["address"] = random.choice(
+                        lang_data["cities"]["major"] if random.random() < 0.8 else lang_data["cities"]["other"]
                     )
-            
-            data.append(employee)
+                    
+                    if employee["position"] in lang_data["positions"]["hierarchy"].get("executive", []):
+                        employee["job_category"] = "Management"
+                    else:
+                        try:
+                            employee["job_category"] = random.choice(lang_data["job_categories"].get(dept_key, ["Default"]))
+                        except (KeyError, IndexError):
+                            employee["job_category"] = "Default"
+                    
+                    employee["job_grade"] = position_to_grade.get(employee["position"], "Lv1")
+                
+                # Common fields for all employees
+                employee["hire_date"] = (current_date - timedelta(days=random.randint(0, 365 * 20))).strftime("%Y-%m-%d")
+                
+                # 退職者は5%のみに設定し、退職していない社員は'2999-12-31'を設定
+                if random.random() < 0.05:
+                    employee["resign_date"] = (current_date - timedelta(days=random.randint(0, 365))).strftime("%Y-%m-%d")
+                else:
+                    employee["resign_date"] = "2999-12-31"
+                    
+                employee["is_married"] = random.choice([True, False])
+                
+                base_employees.append(employee)
+            except Exception as emp_error:
+                st.warning(f"従業員データ生成中にエラーが発生しました（ID: EMP{str(employee_id_counter-1).zfill(6)}）: {str(emp_error)}")
+                # continueせず、次の繰り返しで別の従業員を生成
 
-    return pd.DataFrame(data)
+        if len(base_employees) < employee_count:
+            st.warning(f"要求された従業員数（{employee_count}）に対して、{len(base_employees)}名のデータのみ生成できました。")
+            
+        # Generate monthly data
+        for month_offset in range(num_months):
+            try:
+                base_date = (current_date - timedelta(days=30 * (num_months - 1 - month_offset))).replace(day=1).strftime("%Y-%m-%d")
+                
+                for base_employee in base_employees:
+                    try:
+                        if base_employee["resign_date"] != "2999-12-31" and base_employee["resign_date"] and base_date > base_employee["resign_date"]:
+                            continue
+
+                        # Generate employee data for each month
+                        employee = base_employee.copy()
+                        employee["base_date"] = base_date
+
+                        # Update performance and salary every 12 months
+                        if month_offset % 12 == 0 and employee["resign_date"] != "2999-12-31":
+                            if employee["emp_type"] != lang_data["emp_types"]["choices"][2]:  # Not temporary
+                                try:
+                                    # Update performance
+                                    engagement_score = employee.get("engagement_score", random.uniform(0, 100))
+                                    employee["performance"] = update_performance_based_on_engagement(engagement_score)
+
+                                    # Update salary
+                                    current_salary = employee.get("salary", 0)
+                                    employee["salary"] = adjust_salary_by_performance(current_salary, employee["performance"])
+
+                                    # Update the base data based on the above process
+                                    base_employee.update({
+                                        "performance": employee["performance"],
+                                        "salary": employee["salary"]
+                                    })
+                                except Exception as update_error:
+                                    st.warning(f"パフォーマンスと給与更新中にエラーが発生しました（ID: {employee.get('emp_id', 'Unknown')}）: {str(update_error)}")
+
+                        # Update engagement score 
+                        if employee["emp_type"] != lang_data["emp_types"]["choices"][2] and employee.get("engagement_score"):
+                            if random.random() < 0.3:
+                                try:
+                                    employee["engagement_score"] = round(
+                                        min(max(employee["engagement_score"] * random.uniform(0.9, 1.1), 0),100),
+                                        0
+                                    )
+                                except Exception as score_error:
+                                    st.warning(f"エンゲージメントスコア更新中にエラーが発生しました（ID: {employee.get('emp_id', 'Unknown')}）: {str(score_error)}")
+                                    # エラー発生時はスコアを変更しない
+                        
+                        data.append(employee)
+                    except Exception as monthly_emp_error:
+                        st.warning(f"月次データ生成中にエラーが発生しました（ID: {base_employee.get('emp_id', 'Unknown')}）: {str(monthly_emp_error)}")
+                        continue
+            except Exception as month_error:
+                st.warning(f"月次データセット生成中にエラーが発生しました（月オフセット: {month_offset}）: {str(month_error)}")
+                continue
+        
+        if not data:
+            st.error("データを生成できませんでした。パラメータを確認して再試行してください。")
+            return pd.DataFrame()
+            
+        return pd.DataFrame(data)
+        
+    except Exception as e:
+        st.error(f"データ生成中に重大なエラーが発生しました: {str(e)}")
+        return pd.DataFrame()  # 空のDataFrameを返す
 
 def main():
-    setup_page()
-    
-    # Language selection
-    global selected_language, t, lang_data
-    selected_language = st.selectbox(
-        "Language / 言語",
-        list(LANGUAGE_DATA.keys())
-    )
-    
-    t = TRANSLATIONS[selected_language]
-    lang_data = LANGUAGE_DATA[selected_language]
-    
-    # Initialise Faker
-    global fake
-    fake = Faker({"English": "en_US", "Japanese": "ja_JP"}[selected_language])
-    
-    # UI Setup
-    st.title(t["title"])
-    st.markdown(t["description"])
-    
-    # Field descriptions
-    fields = list(t["fields"].keys())
-    descriptions = [t["fields"][field] for field in fields]
-    df_desc = pd.DataFrame({"Field": fields, "Description": descriptions})
-    st.subheader(t["field_descriptions"])
-    st.table(df_desc)
-    
-    # Sidebar configuration
-    st.sidebar.header(t["config"])
-    
-    global employee_count, num_months, age_range, salary_range
-    employee_count = st.sidebar.slider(t["num_employees"], 200, 500, 300)
-    num_months = st.sidebar.slider(t["num_months"], 1, 24, 1)
-    
-    st.sidebar.subheader(t["additional_params"])
-    age_range = st.sidebar.slider(t["age_range"], 18, 65, (25, 55))
-    salary_range = st.sidebar.slider(t["salary_range"], 3000000, 30000000, (4000000, 10000000))
-    
-    # Generate data
-    if st.button(t["generate_button"], type="primary"):
-        df = generate_employee_data()
-        st.subheader(t["data_preview"])
-        st.dataframe(df.head(10))
+    try:
+        setup_page()
         
-        st.subheader(t["download_options"])
-        col1, col2, col3 = st.columns(3)
+        # Language selection
+        global selected_language, t, lang_data
+        selected_language = st.selectbox(
+            "Language / 言語",
+            list(LANGUAGE_DATA.keys())
+        )
         
-        # Download options
-        csv = df.to_csv(index=False)
-        col1.download_button(t["download_csv"], csv, "hr_data.csv", "text/csv")
+        t = TRANSLATIONS[selected_language]
+        lang_data = LANGUAGE_DATA[selected_language]
         
-        excel_buffer = BytesIO()
-        with pd.ExcelWriter(excel_buffer, engine="openpyxl") as writer:
-            df.to_excel(writer, index=False)
-        col2.download_button(t["download_excel"], excel_buffer.getvalue(), "hr_data.xlsx")
+        # Initialise Faker
+        global fake
+        try:
+            fake = Faker({"English": "en_US", "Japanese": "ja_JP"}.get(selected_language, "en_US"))
+        except Exception as fake_error:
+            st.warning(f"Fakerの初期化中にエラーが発生しました: {str(fake_error)}。デフォルト言語（英語）を使用します。")
+            fake = Faker("en_US")
         
-        json = df.to_json(orient="records")
-        col3.download_button(t["download_json"], json, "hr_data.json", "application/json")
+        # UI Setup
+        st.title(t["title"])
+        st.markdown(t["description"])
+        
+        # Field descriptions
+        try:
+            fields = list(t["fields"].keys())
+            descriptions = [t["fields"][field] for field in fields]
+            df_desc = pd.DataFrame({"Field": fields, "Description": descriptions})
+            st.subheader(t["field_descriptions"])
+            st.table(df_desc)
+        except Exception as desc_error:
+            st.warning(f"フィールド説明の表示中にエラーが発生しました: {str(desc_error)}")
+        
+        # Sidebar configuration
+        st.sidebar.header(t["config"])
+        
+        global employee_count, num_months, age_range, salary_range
+        try:
+            employee_count = st.sidebar.slider(t.get("num_employees", "Number of Employees"), 200, 500, 300)
+            num_months = st.sidebar.slider(t.get("num_months", "Number of Months"), 1, 24, 1)
+            
+            st.sidebar.subheader(t.get("additional_params", "Additional Parameters"))
+            age_range = st.sidebar.slider(t.get("age_range", "Age Range"), 18, 65, (25, 55))
+            salary_range = st.sidebar.slider(t.get("salary_range", "Salary Range (JPY)"), 3000000, 30000000, (4000000, 10000000))
+        except Exception as slider_error:
+            st.error(f"スライダーの設定中にエラーが発生しました: {str(slider_error)}")
+            # デフォルト値を設定
+            employee_count = 300
+            num_months = 1
+            age_range = (25, 55)
+            salary_range = (4000000, 10000000)
+            
+        # Generate data
+        if st.button(t.get("generate_button", "Generate HR Data"), type="primary"):
+            with st.spinner("データを生成中..."):
+                try:
+                    df = generate_employee_data()
+                    if not df.empty:
+                        st.subheader(t.get("data_preview", "Data Preview"))
+                        st.dataframe(df.head(10))
+                        
+                        st.subheader(t.get("download_options", "Download Options"))
+                        col1, col2, col3 = st.columns(3)
+                        
+                        try:
+                            # Download options
+                            csv = df.to_csv(index=False)
+                            col1.download_button(t.get("download_csv", "Download CSV"), csv, "hr_data.csv", "text/csv")
+                            
+                            excel_buffer = BytesIO()
+                            with pd.ExcelWriter(excel_buffer, engine="openpyxl") as writer:
+                                df.to_excel(writer, index=False)
+                            col2.download_button(t.get("download_excel", "Download Excel"), excel_buffer.getvalue(), "hr_data.xlsx")
+                            
+                            json = df.to_json(orient="records")
+                            col3.download_button(t.get("download_json", "Download JSON"), json, "hr_data.json", "application/json")
+                        except Exception as download_error:
+                            st.error(f"ダウンロードオプションの準備中にエラーが発生しました: {str(download_error)}")
+                except Exception as gen_error:
+                    st.error(f"データ生成中に予期しないエラーが発生しました: {str(gen_error)}")
+        
+        # Footer
+        st.sidebar.markdown("---")
+        st.sidebar.markdown(f"""
+        ### {t.get("contact", "Contact")}
+        - **email**: hrdata.generator@gmail.com
+        - **X account**: @hrdata_gen
+        """)
     
-    # Footer
-    st.sidebar.markdown("---")
-    st.sidebar.markdown(f"""
-    ### {t["contact"]}
-    - **email**: hrdata.generator@gmail.com
-    - **X account**: @hrdata_gen
-    """)
+    except Exception as main_error:
+        st.error(f"アプリケーションの実行中に重大なエラーが発生しました: {str(main_error)}")
 
 if __name__ == "__main__":
     main()
