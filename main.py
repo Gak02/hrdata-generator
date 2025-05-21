@@ -249,14 +249,104 @@ def update_performance_based_on_engagement(engagement_score):
     else:
         return "C"
 
+def validate_employee_data(employee):
+    """従業員データの整合性をチェックする"""
+    try:
+        # 日付の整合性チェック
+        hire_date = datetime.strptime(employee["hire_date"], "%Y-%m-%d")
+        resign_date = datetime.strptime(employee["resign_date"], "%Y-%m-%d") if employee["resign_date"] != "2999-12-31" else None
+        birth_date = datetime.strptime(employee["birth_date"], "%Y-%m-%d")
+        current_date = datetime.now()
+
+        # 入社日は現在日以前である必要がある
+        if hire_date > current_date:
+            return False, "入社日が現在日より未来です"
+
+        # 退職日は入社日以降である必要がある
+        if resign_date and resign_date < hire_date:
+            return False, "退職日が入社日より前です"
+
+        # 年齢チェック
+        age = (current_date - birth_date).days / 365.25
+        if not (age_range[0] <= age <= age_range[1]):
+            return False, f"年齢が範囲外です: {age:.1f}歳"
+
+        # 給与チェック
+        if employee["salary"] is not None:
+            if not (salary_range[0] <= employee["salary"] <= salary_range[1]):
+                return False, f"給与が範囲外です: {employee['salary']}円"
+
+        # エンゲージメントスコアチェック
+        if employee["engagement_score"] is not None:
+            if not (0 <= employee["engagement_score"] <= 100):
+                return False, f"エンゲージメントスコアが範囲外です: {employee['engagement_score']}"
+
+        # 組織階層の整合性チェック
+        if employee["position"] in lang_data["positions"]["hierarchy"]["executive"]:
+            if any([employee["org_lv2"], employee["org_lv3"], employee["org_lv4"]]):
+                return False, "役員の組織階層が不適切です"
+        elif employee["position"] in lang_data["positions"]["hierarchy"]["director"]:
+            if any([employee["org_lv3"], employee["org_lv4"]]):
+                return False, "部長の組織階層が不適切です"
+        elif employee["position"] in lang_data["positions"]["hierarchy"]["manager"]:
+            if employee["org_lv4"]:
+                return False, "マネージャーの組織階層が不適切です"
+
+        return True, "OK"
+    except Exception as e:
+        return False, f"データ検証中にエラーが発生しました: {str(e)}"
+
+def update_organization_hierarchy(employee, position):
+    """役職に応じて組織階層を更新する"""
+    try:
+        if position in lang_data["positions"]["hierarchy"]["executive"]:
+            employee["org_lv2"] = None
+            employee["org_lv3"] = None
+            employee["org_lv4"] = None
+        elif position in lang_data["positions"]["hierarchy"]["director"]:
+            employee["org_lv3"] = None
+            employee["org_lv4"] = None
+        elif position in lang_data["positions"]["hierarchy"]["manager"]:
+            employee["org_lv4"] = None
+        return employee
+    except Exception as e:
+        st.warning(f"組織階層の更新中にエラーが発生しました: {str(e)}")
+        return employee
+
+def update_resign_dates(df, current_date):
+    """退職した従業員の退職日を更新する"""
+    try:
+        # 従業員IDごとにグループ化
+        grouped = df.groupby('emp_id')
+        
+        # 各従業員のデータを処理
+        for emp_id, group in grouped:
+            # 退職フラグを確認（退職月のデータが存在しない場合）
+            if len(group) < len(df['base_date'].unique()):
+                # 最後のデータの日付を取得
+                last_date = group['base_date'].max()
+                last_date_dt = datetime.strptime(last_date, "%Y-%m-%d")
+                
+                # 退職日を当月の末日に設定
+                resign_date = (last_date_dt + relativedelta(months=1, days=-1)).strftime("%Y-%m-%d")
+                
+                # 退職日を更新
+                df.loc[df['emp_id'] == emp_id, 'resign_date'] = resign_date
+        
+        return df
+    except Exception as e:
+        st.warning(f"退職日の更新中にエラーが発生しました: {str(e)}")
+        return df
+
 def generate_employee_data():
     try:
         data = []
         current_date = datetime.now()
         base_employees = []
 
+        # より現実的な役職階層を設定
         position_hierarchy = {
-            lang_data["positions"]["choices"][i]: (i + 1) / 2
+            lang_data["positions"]["choices"][i]: 1 + (i * 0.5)  # より現実的な階層差
             for i in range(len(lang_data["positions"]["choices"]))
         }
 
@@ -323,17 +413,37 @@ def generate_employee_data():
                 # Handle contract employees
                 if employee["emp_type"] == lang_data["emp_types"]["choices"][1]:  # Contract
                     employee["position"] = lang_data["positions"]["choices"][0]  # Staff level
-                
-                # Handle temporary employees
-                if employee["emp_type"] == lang_data["emp_types"]["choices"][2]:  # Temporary
-                    employee = {**employee, **{
-                        "salary": None,
-                        "engagement_score": None,
-                        "performance": None,
-                        "address": None,
-                        "job_grade": None,
-                        "position": lang_data["positions"]["choices"][0]
-                    }}
+                    # 契約社員の給与は正社員の80%を基本とするが、最低給与範囲を下回らないようにする
+                    base_salary = calculate_salary(salary_range, position_hierarchy, employee["position"])
+                    contract_salary = round(base_salary * 0.8, -3)
+                    # 最低給与範囲を下回らないように調整
+                    employee["salary"] = max(contract_salary, salary_range[0])
+                    
+                    # 契約社員にも必要なデータを生成
+                    engagement_score = np.random.normal(70, 15)
+                    engagement_score = max(0, min(100, round(engagement_score)))
+                    employee["engagement_score"] = engagement_score
+                    employee["performance"] = get_performance_level(employee["engagement_score"])
+                    
+                    employee["address"] = random.choice(
+                        lang_data["cities"]["major"] if random.random() < 0.8 else lang_data["cities"]["other"]
+                    )
+                    
+                    try:
+                        employee["job_category"] = random.choice(lang_data["job_categories"].get(dept_key, ["Default"]))
+                    except (KeyError, IndexError):
+                        employee["job_category"] = "Default"
+                    
+                    employee["job_grade"] = position_to_grade.get(employee["position"], "Lv1")
+                elif employee["emp_type"] == lang_data["emp_types"]["choices"][2]:  # Temporary
+                    # 派遣社員は基本情報のみを生成
+                    employee["position"] = lang_data["positions"]["choices"][0]  # Staff level
+                    employee["salary"] = None
+                    employee["engagement_score"] = None
+                    employee["performance"] = None
+                    employee["address"] = None
+                    employee["job_category"] = None
+                    employee["job_grade"] = None
                 else:
                     # Regular employee data
                     try:
@@ -364,15 +474,19 @@ def generate_employee_data():
                     employee["job_grade"] = position_to_grade.get(employee["position"], "Lv1")
                 
                 # Common fields for all employees
-                employee["hire_date"] = (current_date - timedelta(days=random.randint(0, 365 * 20))).strftime("%Y-%m-%d")
+                hire_date = (current_date - timedelta(days=random.randint(0, 365 * 20))).strftime("%Y-%m-%d")
+                employee["hire_date"] = hire_date
                 
-                # 退職者は5%のみに設定し、退職していない社員は'2999-12-31'を設定
-                if random.random() < 0.05:
-                    employee["resign_date"] = (current_date - timedelta(days=random.randint(0, 365))).strftime("%Y-%m-%d")
-                else:
-                    employee["resign_date"] = "2999-12-31"
+                # 初期状態では全員が在籍中とする
+                employee["resign_date"] = "2999-12-31"
                     
                 employee["is_married"] = random.choice([True, False])
+                
+                # データの整合性チェック
+                is_valid, error_message = validate_employee_data(employee)
+                if not is_valid:
+                    st.warning(f"従業員データの整合性チェックに失敗しました（ID: {employee['emp_id']}）: {error_message}")
+                    continue
                 
                 base_employees.append(employee)
             except Exception as emp_error:
@@ -390,43 +504,104 @@ def generate_employee_data():
                 
                 for base_employee in base_employees:
                     try:
-                        if base_employee["resign_date"] != "2999-12-31" and base_employee["resign_date"] and base_date > base_employee["resign_date"]:
-                            continue
-
                         # Generate employee data for each month
                         employee = base_employee.copy()
                         employee["base_date"] = base_date
 
-                        # Update performance and salary every 12 months
-                        if month_offset % 12 == 0 and employee["resign_date"] != "2999-12-31":
-                            if employee["emp_type"] != lang_data["emp_types"]["choices"][2]:  # Not temporary
-                                try:
-                                    # Update performance
-                                    engagement_score = employee.get("engagement_score", random.uniform(0, 100))
-                                    employee["performance"] = update_performance_based_on_engagement(engagement_score)
+                        # 退職後のデータは生成しない
+                        if base_employee["resign_date"] != "2999-12-31" and base_date > base_employee["resign_date"]:
+                            continue
 
-                                    # Update salary
-                                    current_salary = employee.get("salary", 0)
-                                    employee["salary"] = adjust_salary_by_performance(current_salary, employee["performance"])
+                        # 退職処理（年間10%の退職率を実現）
+                        if base_employee["resign_date"] == "2999-12-31" and base_employee["emp_type"] != lang_data["emp_types"]["choices"][2]:  # 派遣社員以外
+                            # 入社から1年以上経過している場合のみ退職の可能性を考慮
+                            hire_date_dt = datetime.strptime(base_employee["hire_date"], "%Y-%m-%d")
+                            base_date_dt = datetime.strptime(base_date, "%Y-%m-%d")
+                            years_of_service = (base_date_dt - hire_date_dt).days / 365.25
+                            
+                            if years_of_service >= 1:
+                                # 月次の退職確率を計算（年間10%を月次に換算）
+                                monthly_resign_probability = 1 - (1 - 0.10) ** (1/12)
+                                if random.random() < monthly_resign_probability:
+                                    # 退職日を当月の末日に設定
+                                    resign_date = (base_date_dt + relativedelta(months=1, days=-1)).strftime("%Y-%m-%d")
+                                    # 基本データを更新
+                                    base_employee["resign_date"] = resign_date
+                                    # 月次データも更新
+                                    employee["resign_date"] = resign_date
+                                    # 退職月のデータは生成しない
+                                    continue
 
-                                    # Update the base data based on the above process
+                        # 役職変更の可能性を考慮（年1回、5%の確率で変更）
+                        if month_offset % 12 == 0 and random.random() < 0.05 and employee["emp_type"] != lang_data["emp_types"]["choices"][2]:  # 派遣社員以外
+                            try:
+                                # 現在の役職のインデックスを取得
+                                current_position_index = lang_data["positions"]["choices"].index(employee["position"])
+                                # 1つ上の役職に昇進（最上位の場合は変更なし）
+                                if current_position_index < len(lang_data["positions"]["choices"]) - 1:
+                                    new_position = lang_data["positions"]["choices"][current_position_index + 1]
+                                    employee["position"] = new_position
+                                    # 組織階層を更新
+                                    employee = update_organization_hierarchy(employee, new_position)
+                                    # 給与を更新
+                                    if employee["emp_type"] == lang_data["emp_types"]["choices"][1]:  # 契約社員
+                                        base_salary = calculate_salary(salary_range, position_hierarchy, new_position)
+                                        contract_salary = round(base_salary * 0.8, -3)
+                                        # 最低給与範囲を下回らないように調整
+                                        employee["salary"] = max(contract_salary, salary_range[0])
+                                    else:  # 正社員
+                                        employee["salary"] = calculate_salary(salary_range, position_hierarchy, new_position)
+                                    # 基本データも更新
                                     base_employee.update({
-                                        "performance": employee["performance"],
+                                        "position": new_position,
+                                        "org_lv2": employee["org_lv2"],
+                                        "org_lv3": employee["org_lv3"],
+                                        "org_lv4": employee["org_lv4"],
                                         "salary": employee["salary"]
                                     })
-                                except Exception as update_error:
-                                    st.warning(f"パフォーマンスと給与更新中にエラーが発生しました（ID: {employee.get('emp_id', 'Unknown')}）: {str(update_error)}")
+                            except Exception as position_error:
+                                st.warning(f"役職更新中にエラーが発生しました（ID: {employee.get('emp_id', 'Unknown')}）: {str(position_error)}")
+
+                        # Update performance and salary every 12 months
+                        if month_offset % 12 == 0:
+                            # 入社月からの12ヶ月で評価
+                            hire_month = datetime.strptime(employee["hire_date"], "%Y-%m-%d").month
+                            current_month = datetime.strptime(base_date, "%Y-%m-%d").month
+                            
+                            # 退職月は評価を行わない
+                            if current_month == hire_month and base_date < employee["resign_date"]:
+                                # 派遣社員以外（正社員と契約社員）にパフォーマンス評価を実施
+                                if employee["emp_type"] != lang_data["emp_types"]["choices"][2]:  # Not temporary
+                                    try:
+                                        # Update performance
+                                        engagement_score = employee.get("engagement_score", random.uniform(0, 100))
+                                        employee["performance"] = update_performance_based_on_engagement(engagement_score)
+
+                                        # Update salary
+                                        current_salary = employee.get("salary", 0)
+                                        employee["salary"] = adjust_salary_by_performance(current_salary, employee["performance"])
+
+                                        # Update the base data based on the above process
+                                        base_employee.update({
+                                            "performance": employee["performance"],
+                                            "salary": employee["salary"]
+                                        })
+                                    except Exception as update_error:
+                                        st.warning(f"パフォーマンスと給与更新中にエラーが発生しました（ID: {employee.get('emp_id', 'Unknown')}）: {str(update_error)}")
 
                         # Update engagement score 
+                        # 派遣社員以外（正社員と契約社員）にエンゲージメントスコアを更新
                         if employee["emp_type"] != lang_data["emp_types"]["choices"][2] and employee.get("engagement_score"):
-                            if random.random() < 0.3:
-                                try:
-                                    employee["engagement_score"] = round(
-                                        min(max(employee["engagement_score"] * random.uniform(0.9, 1.1), 0),100),
-                                        0
-                                    )
-                                except Exception as score_error:
-                                    st.warning(f"エンゲージメントスコア更新中にエラーが発生しました（ID: {employee.get('emp_id', 'Unknown')}）: {str(score_error)}")
+                            # 退職月以降は更新しない
+                            if base_date < employee["resign_date"]:
+                                if random.random() < 0.3:
+                                    try:
+                                        employee["engagement_score"] = round(
+                                            min(max(employee["engagement_score"] * random.uniform(0.9, 1.1), 0),100),
+                                            0
+                                        )
+                                    except Exception as score_error:
+                                        st.warning(f"エンゲージメントスコア更新中にエラーが発生しました（ID: {employee.get('emp_id', 'Unknown')}）: {str(score_error)}")
                                     # エラー発生時はスコアを変更しない
                         
                         data.append(employee)
@@ -440,8 +615,14 @@ def generate_employee_data():
         if not data:
             st.error("データを生成できませんでした。パラメータを確認して再試行してください。")
             return pd.DataFrame()
+        
+        # データフレームを作成
+        df = pd.DataFrame(data)
+        
+        # 退職日の更新を実行
+        df = update_resign_dates(df, current_date)
             
-        return pd.DataFrame(data)
+        return df
         
     except Exception as e:
         st.error(f"データ生成中に重大なエラーが発生しました: {str(e)}")
