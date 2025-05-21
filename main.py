@@ -502,15 +502,16 @@ def generate_employee_data():
                 # より正確な月単位の計算を行う
                 base_date = (current_date - relativedelta(months=(num_months - 1 - month_offset))).replace(day=1).strftime("%Y-%m-%d")
                 
+                # 各従業員のデータを生成
                 for base_employee in base_employees:
                     try:
-                        # Generate employee data for each month
-                        employee = base_employee.copy()
-                        employee["base_date"] = base_date
-
                         # 退職後のデータは生成しない
                         if base_employee["resign_date"] != "2999-12-31" and base_date > base_employee["resign_date"]:
                             continue
+
+                        # Generate employee data for each month
+                        employee = base_employee.copy()
+                        employee["base_date"] = base_date
 
                         # 退職処理（年間10%の退職率を実現）
                         if base_employee["resign_date"] == "2999-12-31" and base_employee["emp_type"] != lang_data["emp_types"]["choices"][2]:  # 派遣社員以外
