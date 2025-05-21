@@ -282,7 +282,10 @@ def generate_employee_data():
                 employee["name"] = fake.name()
                 
                 age = random.randint(age_range[0], age_range[1])
-                birth_date = current_date - relativedelta(years=age)
+                # 年齢レンジから生年月日の範囲を計算し、完全ランダムな日付を生成
+                from_date = current_date - relativedelta(years=age_range[1])
+                to_date = current_date - relativedelta(years=age_range[0])
+                birth_date = fake.date_between_dates(date_start=from_date, date_end=to_date)
                 employee["birth_date"] = birth_date.strftime("%Y-%m-%d")
                 
                 employee["gender"] = random.choice(lang_data["genders"])
@@ -339,7 +342,11 @@ def generate_employee_data():
                         st.warning(f"給与計算中にエラーが発生しました: {str(e)}。デフォルト値を使用します。")
                         employee["salary"] = salary_range[0]  # デフォルト値を使用
                         
-                    employee["engagement_score"] = round(random.uniform(14, 100), 0)
+                    # 正規分布を使用してengagement_scoreを生成（平均70、標準偏差15）
+                    engagement_score = np.random.normal(70, 15)
+                    # 0-100の範囲に収める
+                    engagement_score = max(0, min(100, round(engagement_score)))
+                    employee["engagement_score"] = engagement_score
                     employee["performance"] = get_performance_level(employee["engagement_score"])
                     
                     employee["address"] = random.choice(
@@ -378,7 +385,8 @@ def generate_employee_data():
         # Generate monthly data
         for month_offset in range(num_months):
             try:
-                base_date = (current_date - timedelta(days=30 * (num_months - 1 - month_offset))).replace(day=1).strftime("%Y-%m-%d")
+                # より正確な月単位の計算を行う
+                base_date = (current_date - relativedelta(months=(num_months - 1 - month_offset))).replace(day=1).strftime("%Y-%m-%d")
                 
                 for base_employee in base_employees:
                     try:
