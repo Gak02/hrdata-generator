@@ -54,7 +54,7 @@ def render_charts(df, t):
         fig_org.update_layout(xaxis_tickangle=-45)
         st.plotly_chart(fig_org, use_container_width=True)
 
-    # 3. Salary box plot by position (vertical box plots: position on x-axis, salary on y-axis)
+    # 3. Salary box plot by position (vertical box plot like the reference image)
     with col3:
         salary_df = chart_df[chart_df["salary"].notna()].copy()
         if not salary_df.empty:
@@ -64,9 +64,14 @@ def render_charts(df, t):
                 y="salary",
                 title=t["chart_salary_box"],
                 labels={"position": "Position", "salary": "Salary"},
+                points="all",  # Show all data points
             )
             fig_salary.update_traces(
-                quartilemethod="linear",
+                quartilemethod="linear",  # Q1, median, Q3 with linear interpolation
+                boxpoints="all",  # Show all points
+                jitter=0.3,  # Spread points horizontally for visibility
+                pointpos=0,  # Points centered on box
+                marker=dict(size=4, opacity=0.5),  # Smaller, semi-transparent points
             )
             fig_salary.update_layout(
                 xaxis_tickangle=-45,
