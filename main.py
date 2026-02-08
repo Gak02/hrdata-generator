@@ -26,9 +26,11 @@ def render_charts(df, t):
     if "is_primary_position" in chart_df.columns:
         chart_df = chart_df[chart_df["is_primary_position"] == True]
 
-    # 1. Gender pie chart (centered) - first
-    col_left, col_center, col_right = st.columns([1, 2, 1])
-    with col_center:
+    # Display all 3 charts in parallel columns
+    col1, col2, col3 = st.columns(3)
+
+    # 1. Gender pie chart
+    with col1:
         gender_counts = chart_df["gender"].value_counts().reset_index()
         gender_counts.columns = ["Gender", "Count"]
         fig_gender = px.pie(
@@ -39,9 +41,8 @@ def render_charts(df, t):
         )
         st.plotly_chart(fig_gender, use_container_width=True)
 
-    # 2. Headcount by org_lv2 (bar chart) - second
-    col_left2, col_center2, col_right2 = st.columns([1, 2, 1])
-    with col_center2:
+    # 2. Headcount by org_lv2 (bar chart)
+    with col2:
         org_counts = chart_df["org_lv2"].value_counts().reset_index()
         org_counts.columns = ["Department", "Count"]
         fig_org = px.bar(
@@ -53,23 +54,26 @@ def render_charts(df, t):
         fig_org.update_layout(xaxis_tickangle=-45)
         st.plotly_chart(fig_org, use_container_width=True)
 
-    # 3. Salary box plot by position - third (with proper quartiles)
-    salary_df = chart_df[chart_df["salary"].notna()].copy()
-    if not salary_df.empty:
-        fig_salary = px.box(
-            salary_df,
-            x="position",
-            y="salary",
-            title=t["chart_salary_box"],
-            labels={"position": "Position", "salary": "Salary"},
-            points="all",  # Show all data points
-        )
-        fig_salary.update_traces(
-            quartilemethod="linear",  # Use linear interpolation for quartiles
-            boxmean=False,  # Don't show mean line, show proper box plot
-        )
-        fig_salary.update_layout(xaxis_tickangle=-45)
-        st.plotly_chart(fig_salary, use_container_width=True)
+    # 3. Salary box plot by position (vertical box plots: position on x-axis, salary on y-axis)
+    with col3:
+        salary_df = chart_df[chart_df["salary"].notna()].copy()
+        if not salary_df.empty:
+            fig_salary = px.box(
+                salary_df,
+                x="position",
+                y="salary",
+                title=t["chart_salary_box"],
+                labels={"position": "Position", "salary": "Salary"},
+            )
+            fig_salary.update_traces(
+                quartilemethod="linear",
+            )
+            fig_salary.update_layout(
+                xaxis_tickangle=-45,
+                yaxis_title="Salary",
+                xaxis_title="Position",
+            )
+            st.plotly_chart(fig_salary, use_container_width=True)
 
 
 def main():
