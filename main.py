@@ -22,40 +22,11 @@ def render_charts(df, t):
 
     # Use only first month and primary positions for charts
     first_month = df["base_date"].min()
-    chart_df = df[df["base_date"] == first_month]
+    chart_df = df[df["base_date"] == first_month].copy()
     if "is_primary_position" in chart_df.columns:
         chart_df = chart_df[chart_df["is_primary_position"] == True]
 
-    col1, col2 = st.columns(2)
-
-    with col1:
-        # Salary box plot by position
-        salary_df = chart_df[chart_df["salary"].notna()]
-        if not salary_df.empty:
-            fig_salary = px.box(
-                salary_df,
-                x="position",
-                y="salary",
-                title=t["chart_salary_box"],
-                labels={"position": "Position", "salary": "Salary"},
-            )
-            fig_salary.update_layout(xaxis_tickangle=-45)
-            st.plotly_chart(fig_salary, use_container_width=True)
-
-    with col2:
-        # Headcount by org_lv2 (bar chart)
-        org_counts = chart_df["org_lv2"].value_counts().reset_index()
-        org_counts.columns = ["Department", "Count"]
-        fig_org = px.bar(
-            org_counts,
-            x="Department",
-            y="Count",
-            title=t["chart_org_bar"],
-        )
-        fig_org.update_layout(xaxis_tickangle=-45)
-        st.plotly_chart(fig_org, use_container_width=True)
-
-    # Gender pie chart (centered)
+    # 1. Gender pie chart (centered) - first
     col_left, col_center, col_right = st.columns([1, 2, 1])
     with col_center:
         gender_counts = chart_df["gender"].value_counts().reset_index()
@@ -67,6 +38,38 @@ def render_charts(df, t):
             title=t["chart_gender_pie"],
         )
         st.plotly_chart(fig_gender, use_container_width=True)
+
+    # 2. Headcount by org_lv2 (bar chart) - second
+    col_left2, col_center2, col_right2 = st.columns([1, 2, 1])
+    with col_center2:
+        org_counts = chart_df["org_lv2"].value_counts().reset_index()
+        org_counts.columns = ["Department", "Count"]
+        fig_org = px.bar(
+            org_counts,
+            x="Department",
+            y="Count",
+            title=t["chart_org_bar"],
+        )
+        fig_org.update_layout(xaxis_tickangle=-45)
+        st.plotly_chart(fig_org, use_container_width=True)
+
+    # 3. Salary box plot by position - third (with proper quartiles)
+    salary_df = chart_df[chart_df["salary"].notna()].copy()
+    if not salary_df.empty:
+        fig_salary = px.box(
+            salary_df,
+            x="position",
+            y="salary",
+            title=t["chart_salary_box"],
+            labels={"position": "Position", "salary": "Salary"},
+            points="all",  # Show all data points
+        )
+        fig_salary.update_traces(
+            quartilemethod="linear",  # Use linear interpolation for quartiles
+            boxmean=False,  # Don't show mean line, show proper box plot
+        )
+        fig_salary.update_layout(xaxis_tickangle=-45)
+        st.plotly_chart(fig_salary, use_container_width=True)
 
 
 def main():
@@ -124,10 +127,7 @@ def main():
                     st.subheader(t["data_preview"])
                     st.dataframe(df.head(10))
 
-                    # Charts
-                    render_charts(df, t)
-
-                    # Download options
+                    # Download options (before charts)
                     st.subheader(t["download_options"])
                     col1, col2, col3 = st.columns(3)
 
@@ -141,6 +141,9 @@ def main():
 
                     json_data = df.to_json(orient="records")
                     col3.download_button(t["download_json"], json_data, "hr_data.json", "application/json")
+
+                    # Charts (after download options)
+                    render_charts(df, t)
             except Exception as e:
                 st.error(f"Error generating data: {str(e)}")
 
