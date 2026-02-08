@@ -29,9 +29,9 @@ def render_charts(df, t):
     # Display all 3 charts in parallel columns
     col1, col2, col3 = st.columns(3)
 
-    # 1. Gender pie chart
+    # 1. Gender pie chart (distinct emp_id count)
     with col1:
-        gender_counts = chart_df["gender"].value_counts().reset_index()
+        gender_counts = chart_df.groupby("gender")["emp_id"].nunique().reset_index()
         gender_counts.columns = ["Gender", "Count"]
         fig_gender = px.pie(
             gender_counts,
@@ -41,9 +41,9 @@ def render_charts(df, t):
         )
         st.plotly_chart(fig_gender, use_container_width=True)
 
-    # 2. Headcount by org_lv2 (bar chart)
+    # 2. Headcount by org_lv2 (bar chart, distinct emp_id count)
     with col2:
-        org_counts = chart_df["org_lv2"].value_counts().reset_index()
+        org_counts = chart_df.groupby("org_lv2")["emp_id"].nunique().reset_index()
         org_counts.columns = ["Department", "Count"]
         fig_org = px.bar(
             org_counts,
