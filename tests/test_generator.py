@@ -93,3 +93,67 @@ class TestDatasetStructure:
         df1 = generate_dataset(default_config)
         df2 = generate_dataset(default_config)
         assert df1.equals(df2)
+
+
+class TestConcurrentPositions:
+    """Tests for concurrent positions (兼務) feature."""
+
+    def test_no_concurrent_positions_by_default(self, default_config):
+        """By default, include_concurrent_positions is False."""
+        assert default_config.include_concurrent_positions is False
+
+    def test_no_duplicate_emp_id_when_disabled(self, default_config):
+        """When concurrent positions disabled, emp_id is unique per month."""
+        config = replace(default_config, include_concurrent_positions=False)
+        df = generate_dataset(config)
+        for base_date, group in df.groupby("base_date"):
+            assert group["emp_id"].is_unique
+
+    def test_concurrent_positions_creates_duplicates(self, default_config):
+        """When enabled, some employees have multiple rows per month."""
+        config = replace(
+            default_config,
+            include_concurrent_positions=True,
+            employee_count=200,
+            random_seed=42,
+        )
+        df = generate_dataset(config)
+        # Check if any emp_id appears more than once in a single month
+        first_month = df["base_date"].min()
+        first_month_df = df[df["base_date"] == first_month]
+        has_duplicates = first_month_df["emp_id"].duplicated().any()
+        assert has_duplicates, "Expected some employees with concurrent positions"
+
+    def test_concurrent_position_has_different_org(self, default_config):
+        """Concurrent position rows have different org_lv2."""
+        config = replace(
+            default_config,
+            include_concurrent_positions=True,
+            employee_count=200,
+            random_seed=42,
+        )
+        df = generate_dataset(config)
+        first_month = df["base_date"].min()
+        first_month_df = df[df["base_date"] == first_month]
+        # Find employees with duplicate entries
+        dup_emp_ids = first_month_df[first_month_df["emp_id"].duplicated(keep=False)]["emp_id"].unique()
+        if len(dup_emp_ids) > 0:
+            for emp_id in dup_emp_ids[:3]:  # Check first 3
+                emp_rows = first_month_df[first_month_df["emp_id"] == emp_id]
+                # org_lv2 should be different for concurrent positions
+                assert emp_rows["org_lv2"].nunique() > 1, (
+                    f"Employee {emp_id} concurrent positions should have different org_lv2"
+                )
+
+    def test_concurrent_position_has_is_primary_flag(self, default_config):
+        """Concurrent position rows have is_primary_position column."""
+        config = replace(
+            default_config,
+            include_concurrent_positions=True,
+            employee_count=200,
+            random_seed=42,
+        )
+        df = generate_dataset(config)
+        assert "is_primary_position" in df.columns
+        # Primary position should be True/False
+        assert df["is_primary_position"].dtype == bool
