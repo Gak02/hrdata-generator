@@ -8,7 +8,7 @@ from faker import Faker
 from dateutil.relativedelta import relativedelta
 
 from hr_generator.config import LANGUAGE_DATA
-from hr_generator.employee import create_employee, validate_employee
+from hr_generator.employee import create_employee, validate_employee, get_department_key
 from hr_generator.monthly import generate_monthly_snapshot
 from hr_generator.models import GeneratorConfig
 
@@ -17,6 +17,55 @@ def _seed_all(seed):
     """Seed all random generators for reproducibility."""
     random.seed(seed)
     np.random.seed(seed)
+
+
+def _add_concurrent_positions(rows, config, lang_data):
+    """Add concurrent position records for some employees.
+
+    Returns new list of rows with concurrent positions added.
+    Each employee's primary position is marked as is_primary_position=True.
+    Concurrent positions are marked as is_primary_position=False.
+    """
+    if not config.include_concurrent_positions:
+        # Add is_primary_position=True to all rows
+        for row in rows:
+            row["is_primary_position"] = True
+        return rows
+
+    result = []
+    org_lv2_options = lang_data["organizations"]["org_lv2"]
+
+    for row in rows:
+        # Mark original as primary
+        row["is_primary_position"] = True
+        result.append(row)
+
+        # Only non-temporary employees can have concurrent positions
+        emp_type_choices = lang_data["emp_types"]["choices"]
+        if row["emp_type"] == emp_type_choices[2]:  # Temporary
+            continue
+
+        # Randomly assign concurrent position
+        if random.random() < config.concurrent_position_rate:
+            # Create concurrent position row
+            concurrent = row.copy()
+            concurrent["is_primary_position"] = False
+
+            # Assign different org_lv2
+            current_org_lv2 = row["org_lv2"]
+            other_orgs = [o for o in org_lv2_options if o != current_org_lv2]
+            if other_orgs:
+                concurrent["org_lv2"] = random.choice(other_orgs)
+                # Update org_lv3 based on new org_lv2
+                dept_key = get_department_key(concurrent["org_lv2"])
+                org_lv3_options = lang_data["organizations"]["org_lv3"].get(dept_key, [])
+                if org_lv3_options:
+                    concurrent["org_lv3"] = random.choice(org_lv3_options)
+                concurrent["org_lv4"] = random.choice(lang_data["organizations"]["org_lv4"])
+
+                result.append(concurrent)
+
+    return result
 
 
 def generate_base_employees(config, lang_data, fake):
@@ -77,6 +126,8 @@ def generate_dataset(config):
         rows = generate_monthly_snapshot(
             base_employees, month_offset, base_date, config, lang_data
         )
+        # Add concurrent positions if enabled
+        rows = _add_concurrent_positions(rows, config, lang_data)
         all_rows.extend(rows)
 
     if not all_rows:
