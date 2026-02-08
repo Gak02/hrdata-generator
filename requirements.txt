@@ -4,4 +4,5 @@ pandas
 numpy
 openpyxl
 python-dateutil
+plotly
 pytest
