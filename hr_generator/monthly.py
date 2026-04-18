@@ -4,13 +4,83 @@ from datetime import datetime
 
 from dateutil.relativedelta import relativedelta
 
+from hr_generator.config import JOB_GRADE_SALARY_BANDS, RESIGNATION_REASONS
 from hr_generator.employee import (
     adjust_organization_by_position,
     adjust_salary_by_performance,
     calculate_salary,
     get_performance_level,
-    _build_position_hierarchy,
+    _build_position_to_grade,
 )
+
+
+def _get_resignation_reason(employee, config, lang_data):
+    """Select an appropriate resignation reason (A6).
+
+    Considers employee type, age, and engagement to pick a realistic reason.
+    """
+    language = config.language
+    reasons = RESIGNATION_REASONS.get(language, RESIGNATION_REASONS["English"])
+    emp_type_choices = lang_data["emp_types"]["choices"]
+
+    # Contract expiry for contract employees
+    if employee["emp_type"] == emp_type_choices[1]:
+        # Higher chance of contract expiry
+        if random.random() < 0.6:
+            return reasons[3]  # "Contract Expiry" / "契約満了"
+
+    # Retirement for older employees (age >= 58)
+    birth_date = datetime.strptime(employee["birth_date"], "%Y-%m-%d")
+    age = (datetime.now() - birth_date).days / 365.25
+    if age >= 58:
+        if random.random() < 0.5:
+            return reasons[4]  # "Retirement" / "定年退職"
+
+    # Voluntary reasons (weighted by engagement)
+    voluntary_reasons = reasons[:3]  # Career change, personal, relocation
+    return random.choice(voluntary_reasons)
+
+
+def _calculate_resignation_probability(base_employee, base_date_dt, config):
+    """Calculate adjusted resignation probability (A3 + A4).
+
+    Short-tenure employees and low-engagement employees resign more often.
+    """
+    hire_date_dt = datetime.strptime(base_employee["hire_date"], "%Y-%m-%d")
+    years_of_service = (base_date_dt - hire_date_dt).days / 365.25
+
+    if years_of_service < 1:
+        return 0.0  # Can't resign in first year
+
+    # Base monthly probability from annual rate
+    base_monthly_prob = 1 - (1 - config.resignation_rate) ** (1 / 12)
+
+    # A3: Short tenure multiplier (1-3 years: 2x, 3-5 years: 1.5x, 5+ years: 1x)
+    if years_of_service <= 3:
+        tenure_multiplier = 2.0
+    elif years_of_service <= 5:
+        tenure_multiplier = 1.5
+    else:
+        tenure_multiplier = 1.0
+
+    # A4: Low engagement multiplier
+    engagement = base_employee.get("engagement_score")
+    if engagement is not None:
+        if engagement < 40:
+            engagement_multiplier = 3.0
+        elif engagement < 55:
+            engagement_multiplier = 2.0
+        elif engagement < 70:
+            engagement_multiplier = 1.2
+        else:
+            engagement_multiplier = 0.7
+    else:
+        engagement_multiplier = 1.0
+
+    raw_prob = base_monthly_prob * tenure_multiplier * engagement_multiplier
+    # Cap monthly probability so annualized rate stays reasonable (~30% max)
+    max_monthly_prob = 0.03
+    return min(raw_prob, max_monthly_prob)
 
 
 def generate_monthly_snapshot(base_employees, month_offset, base_date_str, config, lang_data):
@@ -22,7 +92,7 @@ def generate_monthly_snapshot(base_employees, month_offset, base_date_str, confi
     """
     rows = []
     base_date_dt = datetime.strptime(base_date_str, "%Y-%m-%d")
-    position_hierarchy = _build_position_hierarchy(lang_data)
+    position_to_grade = _build_position_to_grade(lang_data)
     emp_type_choices = lang_data["emp_types"]["choices"]
 
     for base_employee in base_employees:
@@ -35,25 +105,25 @@ def generate_monthly_snapshot(base_employees, month_offset, base_date_str, confi
         employee = base_employee.copy()
         employee["base_date"] = base_date_str
 
-        # --- Resignation logic ---
+        # --- Resignation logic (A3 + A4 + A6) ---
         # Only consider resignation for non-temporary, currently active employees
         if (
             base_employee["resign_date"] == "2999-12-31"
             and base_employee["emp_type"] != emp_type_choices[2]  # not temporary
         ):
-            hire_date_dt = datetime.strptime(base_employee["hire_date"], "%Y-%m-%d")
-            years_of_service = (base_date_dt - hire_date_dt).days / 365.25
-
-            if years_of_service >= 1:
-                monthly_resign_prob = 1 - (1 - config.resignation_rate) ** (1 / 12)
-                if random.random() < monthly_resign_prob:
-                    resign_date = (
-                        base_date_dt + relativedelta(months=1, days=-1)
-                    ).strftime("%Y-%m-%d")
-                    base_employee["resign_date"] = resign_date
-                    employee["resign_date"] = resign_date
-                    # FIX P0: DO NOT skip this employee. They appear in their
-                    # resignation month with resign_date set.
+            resign_prob = _calculate_resignation_probability(
+                base_employee, base_date_dt, config
+            )
+            if resign_prob > 0 and random.random() < resign_prob:
+                resign_date = (
+                    base_date_dt + relativedelta(months=1, days=-1)
+                ).strftime("%Y-%m-%d")
+                base_employee["resign_date"] = resign_date
+                employee["resign_date"] = resign_date
+                # A6: Assign resignation reason
+                reason = _get_resignation_reason(employee, config, lang_data)
+                base_employee["resignation_reason"] = reason
+                employee["resignation_reason"] = reason
 
         # --- Promotion logic (yearly, 5% chance) ---
         if (
@@ -66,22 +136,30 @@ def generate_monthly_snapshot(base_employees, month_offset, base_date_str, confi
             if current_idx < len(lang_data["positions"]["choices"]) - 1:
                 new_position = lang_data["positions"]["choices"][current_idx + 1]
                 employee["position"] = new_position
+                new_grade = position_to_grade[new_position]
+                employee["job_grade"] = new_grade
                 employee = adjust_organization_by_position(
                     employee, lang_data["positions"], new_position
                 )
-                # Update salary for promoted position
+                # Update salary: keep performance raises, ensure within new grade band
+                band_low, band_high = JOB_GRADE_SALARY_BANDS[new_grade]
+                salary_span = config.salary_range[1] - config.salary_range[0]
+                new_grade_min = config.salary_range[0] + salary_span * band_low
+                new_grade_max = config.salary_range[0] + salary_span * band_high
+
                 if employee["emp_type"] == emp_type_choices[1]:  # contract
-                    base_salary = calculate_salary(
-                        config.salary_range, position_hierarchy, new_position
-                    )
-                    contract_salary = round(base_salary * 0.8, -3)
-                    employee["salary"] = max(contract_salary, config.salary_range[0])
+                    promoted_salary = max(employee["salary"] or new_grade_min, new_grade_min)
+                    promoted_salary = min(promoted_salary, new_grade_max)
+                    employee["salary"] = max(round(promoted_salary * 0.8, -3), config.salary_range[0])
                 elif employee["salary"] is not None:
-                    employee["salary"] = calculate_salary(
-                        config.salary_range, position_hierarchy, new_position
-                    )
+                    # Preserve accumulated performance raises
+                    promoted_salary = max(employee["salary"], new_grade_min)
+                    promoted_salary = min(promoted_salary, new_grade_max)
+                    employee["salary"] = round(promoted_salary, -3)
+
                 # Persist to base
                 base_employee["position"] = new_position
+                base_employee["job_grade"] = new_grade
                 base_employee["org_lv2"] = employee["org_lv2"]
                 base_employee["org_lv3"] = employee["org_lv3"]
                 base_employee["org_lv4"] = employee["org_lv4"]
@@ -95,9 +173,13 @@ def generate_monthly_snapshot(base_employees, month_offset, base_date_str, confi
                 if current_month == hire_month and base_date_str < employee["resign_date"]:
                     employee["performance"] = get_performance_level(employee["engagement_score"])
                     if employee["salary"] is not None:
-                        employee["salary"] = adjust_salary_by_performance(
+                        adjusted = adjust_salary_by_performance(
                             employee["salary"], employee["performance"]
                         )
+                        # Clamp salary to salary_range bounds
+                        adjusted = max(adjusted, config.salary_range[0])
+                        adjusted = min(adjusted, config.salary_range[1])
+                        employee["salary"] = adjusted
                     base_employee["performance"] = employee["performance"]
                     base_employee["salary"] = employee["salary"]
 

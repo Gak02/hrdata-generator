@@ -8,7 +8,13 @@ from faker import Faker
 from dateutil.relativedelta import relativedelta
 
 from hr_generator.config import LANGUAGE_DATA
-from hr_generator.employee import create_employee, validate_employee, get_department_key
+from hr_generator.employee import (
+    create_employee,
+    validate_employee,
+    get_department_key,
+    assign_forced_performance,
+    adjust_organization_by_position,
+)
 from hr_generator.monthly import generate_monthly_snapshot
 from hr_generator.models import GeneratorConfig
 
@@ -63,6 +69,11 @@ def _add_concurrent_positions(rows, config, lang_data):
                     concurrent["org_lv3"] = random.choice(org_lv3_options)
                 concurrent["org_lv4"] = random.choice(lang_data["organizations"]["org_lv4"])
 
+                # Re-apply position hierarchy rules to concurrent position
+                concurrent = adjust_organization_by_position(
+                    concurrent, lang_data["positions"], concurrent["position"]
+                )
+
                 result.append(concurrent)
 
     return result
@@ -113,6 +124,9 @@ def generate_dataset(config):
 
     # Generate base employees (exact count guaranteed)
     base_employees = generate_base_employees(config, lang_data, fake)
+
+    # C4: Apply forced performance distribution across all employees
+    assign_forced_performance(base_employees)
 
     # Generate monthly snapshots
     current_date = datetime.now()

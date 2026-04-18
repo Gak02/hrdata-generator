@@ -18,6 +18,91 @@ SALARY_ADJUSTMENT_RATES = {
     "C": 0.97,
 }
 
+JOB_GRADE_SALARY_BANDS = {
+    # grade: (salary_range内の下限%, 上限%)
+    "Lv1": (0.00, 0.15),   # 一般社員 / Staff
+    "Lv2": (0.10, 0.30),   # チームリーダー / Team Lead
+    "Lv3": (0.25, 0.50),   # マネージャー / Manager
+    "Lv4": (0.45, 0.70),   # 部長 / General Manager
+    "Lv5": (0.65, 0.85),   # 執行役員 / VP
+    "Lv6": (0.80, 1.00),   # 取締役 / C-level
+}
+
+FORCED_PERFORMANCE_DISTRIBUTION = {
+    "S": 0.05,
+    "A": 0.20,
+    "B": 0.60,
+    "C": 0.15,
+}
+
+# Department distribution weights (org_lv2)
+DEPARTMENT_WEIGHTS = {
+    "English": {
+        "Sales & Marketing": 40,
+        "Engineering": 30,
+        "HR": 15,
+        "Finance": 15,
+    },
+    "Japanese": {
+        "営業・マーケティング": 40,
+        "エンジニアリング": 30,
+        "人事": 15,
+        "財務": 15,
+    },
+}
+
+# Resignation reasons by language
+RESIGNATION_REASONS = {
+    "English": [
+        "Voluntary - Career Change",
+        "Voluntary - Personal Reasons",
+        "Voluntary - Relocation",
+        "Contract Expiry",
+        "Retirement",
+        "Involuntary - Restructuring",
+    ],
+    "Japanese": [
+        "自己都合 - キャリアチェンジ",
+        "自己都合 - 個人的理由",
+        "自己都合 - 転居",
+        "契約満了",
+        "定年退職",
+        "会社都合 - 組織再編",
+    ],
+}
+
+# Hire month weights by language (1=Jan .. 12=Dec)
+HIRE_MONTH_WEIGHTS = {
+    "English": {
+        1: 20, 2: 8, 3: 8, 4: 8, 5: 8, 6: 10,
+        7: 5, 8: 5, 9: 15, 10: 8, 11: 3, 12: 2,
+    },
+    "Japanese": {
+        1: 5, 2: 3, 3: 5, 4: 40, 5: 5, 6: 5,
+        7: 5, 8: 3, 9: 8, 10: 10, 11: 5, 12: 6,
+    },
+}
+
+# Age-based position weight adjustments
+# Each entry: (age_min, age_max) -> multiplier per position index
+# Position order: Staff(0), Team Lead(1), Manager(2), Gen Mgr(3), VP(4), C-level(5)
+AGE_POSITION_WEIGHT_MODIFIERS = {
+    (0, 29): [3.0, 1.0, 0.1, 0.0, 0.0, 0.0],
+    (30, 39): [1.5, 2.0, 1.5, 0.5, 0.1, 0.0],
+    (40, 49): [0.8, 1.5, 2.0, 2.0, 1.0, 0.5],
+    (50, 99): [0.5, 1.0, 1.5, 2.5, 2.0, 2.0],
+}
+
+# Marriage rate by age bracket
+MARRIAGE_RATE_BY_AGE = {
+    (0, 24): 0.10,
+    (25, 29): 0.25,
+    (30, 34): 0.50,
+    (35, 39): 0.65,
+    (40, 44): 0.75,
+    (45, 99): 0.80,
+}
+
 LANGUAGE_DATA = {
     "English": {
         "organizations": {
@@ -50,7 +135,10 @@ LANGUAGE_DATA = {
             "HR": ["HR Specialist", "Recruiter", "HR Operations", "Training Specialist"],
             "Finance": ["Financial Analyst", "Accountant", "Treasury Analyst", "Auditor"],
         },
-        "genders": ["Male", "Female", "Other"],
+        "genders": {
+            "choices": ["Male", "Female", "Other"],
+            "weights": [70, 28, 2],
+        },
         "cities": {
             "major": ["New York", "Los Angeles", "Chicago", "Houston", "Phoenix"],
             "other": ["Seattle", "Boston", "Denver", "Austin", "Portland"],
@@ -88,7 +176,10 @@ LANGUAGE_DATA = {
             "HR": ["人事担当", "採用担当", "人事業務", "研修担当"],
             "Finance": ["財務アナリスト", "経理担当", "財務担当", "監査担当"],
         },
-        "genders": ["男性", "女性", "その他"],
+        "genders": {
+            "choices": ["男性", "女性", "その他"],
+            "weights": [70, 28, 2],
+        },
         "cities": {
             "major": ["東京", "横浜", "大阪", "名古屋", "福岡"],
             "other": ["札幌", "仙台", "広島", "神戸", "京都"],
