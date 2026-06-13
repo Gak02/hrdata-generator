@@ -127,8 +127,7 @@ def generate_monthly_snapshot(base_employees, month_offset, base_date_str, confi
 
         # --- Promotion logic (yearly, 5% chance) ---
         if (
-            month_offset > 0
-            and month_offset % 12 == 0
+            (month_offset + 1) % 12 == 0
             and random.random() < 0.05
             and employee["emp_type"] != emp_type_choices[2]  # not temporary
         ):
@@ -166,7 +165,7 @@ def generate_monthly_snapshot(base_employees, month_offset, base_date_str, confi
                 base_employee["salary"] = employee["salary"]
 
         # --- Performance and salary update (every 12 months) ---
-        if month_offset > 0 and month_offset % 12 == 0:
+        if (month_offset + 1) % 12 == 0:
             if employee["emp_type"] != emp_type_choices[2] and employee.get("engagement_score") is not None:
                 hire_month = datetime.strptime(employee["hire_date"], "%Y-%m-%d").month
                 current_month = base_date_dt.month
