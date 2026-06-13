@@ -267,11 +267,6 @@ def create_employee(config, lang_data, fake, employee_id):
         k=1,
     )[0]
 
-    # Adjust organisation based on position
-    employee = adjust_organization_by_position(
-        employee, lang_data["positions"], employee["position"]
-    )
-
     # Employment-type specific logic
     emp_type_choices = lang_data["emp_types"]["choices"]
     is_contract = employee["emp_type"] == emp_type_choices[1]
@@ -301,6 +296,11 @@ def create_employee(config, lang_data, fake, employee_id):
         employee["salary"] = None
     else:
         employee["salary"] = calculate_salary(config.salary_range, job_grade, age_factor)
+
+    # Adjust organisation based on final position (after any contract/temp override)
+    employee = adjust_organization_by_position(
+        employee, lang_data["positions"], employee["position"]
+    )
 
     # Engagement and performance (initial; C4 forced distribution applied later in generator)
     if is_temporary:

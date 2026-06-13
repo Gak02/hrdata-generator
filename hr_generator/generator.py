@@ -46,9 +46,12 @@ def _add_concurrent_positions(rows, config, lang_data):
         row["is_primary_position"] = True
         result.append(row)
 
-        # Only non-temporary employees can have concurrent positions
+        # Only non-temporary, non-executive employees can have concurrent positions.
+        # Executives have org_lv2=None so any concurrent row would be identical to the primary.
         emp_type_choices = lang_data["emp_types"]["choices"]
         if row["emp_type"] == emp_type_choices[2]:  # Temporary
+            continue
+        if row["org_lv2"] is None:  # Executive (VP / C-level)
             continue
 
         # Randomly assign concurrent position

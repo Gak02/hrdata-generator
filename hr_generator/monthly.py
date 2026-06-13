@@ -14,7 +14,7 @@ from hr_generator.employee import (
 )
 
 
-def _get_resignation_reason(employee, config, lang_data):
+def _get_resignation_reason(employee, config, lang_data, base_date_dt):
     """Select an appropriate resignation reason (A6).
 
     Considers employee type, age, and engagement to pick a realistic reason.
@@ -31,7 +31,7 @@ def _get_resignation_reason(employee, config, lang_data):
 
     # Retirement for older employees (age >= 58)
     birth_date = datetime.strptime(employee["birth_date"], "%Y-%m-%d")
-    age = (datetime.now() - birth_date).days / 365.25
+    age = (base_date_dt - birth_date).days / 365.25
     if age >= 58:
         if random.random() < 0.5:
             return reasons[4]  # "Retirement" / "定年退職"
@@ -121,7 +121,7 @@ def generate_monthly_snapshot(base_employees, month_offset, base_date_str, confi
                 base_employee["resign_date"] = resign_date
                 employee["resign_date"] = resign_date
                 # A6: Assign resignation reason
-                reason = _get_resignation_reason(employee, config, lang_data)
+                reason = _get_resignation_reason(employee, config, lang_data, base_date_dt)
                 base_employee["resignation_reason"] = reason
                 employee["resignation_reason"] = reason
 

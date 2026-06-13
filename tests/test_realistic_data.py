@@ -160,23 +160,34 @@ class TestResignationRateAttributes:
     """A3: Short-tenure and low-engagement employees resign more."""
 
     def test_short_tenure_higher_resignation(self, multi_month_resign_config):
-        """Employees with 1-3 years tenure should resign at a higher rate."""
+        """Short-tenure employees should resign at a higher *rate* than long-tenure employees."""
         df = generate_dataset(multi_month_resign_config)
-        resigned = df[df["resign_date"] != "2999-12-31"].drop_duplicates("emp_id")
-        if len(resigned) == 0:
-            pytest.skip("No resignations in sample")
 
-        now = datetime.now()
-        resigned["tenure_at_resign"] = resigned.apply(
-            lambda r: (datetime.strptime(r["resign_date"], "%Y-%m-%d")
-                        - datetime.strptime(r["hire_date"], "%Y-%m-%d")).days / 365.25,
-            axis=1,
+        resigned_ids = set(df[df["resign_date"] != "2999-12-31"]["emp_id"].unique())
+
+        # Measure each employee's tenure at the start of the simulation window.
+        # Comparing resignation *rates* (proportion per bucket) is robust to different
+        # bucket sizes; comparing raw counts breaks when one bucket has far more employees.
+        first_month = df["base_date"].min()
+        first_df = df[df["base_date"] == first_month].copy()
+        first_df["resigned"] = first_df["emp_id"].isin(resigned_ids)
+        first_df["tenure_years"] = first_df["hire_date"].apply(
+            lambda hd: (datetime.now() - datetime.strptime(hd, "%Y-%m-%d")).days / 365.25
         )
-        short_tenure_resignees = len(resigned[resigned["tenure_at_resign"] <= 5])
-        long_tenure_resignees = len(resigned[resigned["tenure_at_resign"] > 5])
-        # Short tenure should have proportionally more resignations
-        assert short_tenure_resignees >= long_tenure_resignees, (
-            f"Short tenure resignees ({short_tenure_resignees}) should >= long ({long_tenure_resignees})"
+
+        # Only employees eligible to resign (>= 1 year tenure per the model)
+        eligible = first_df[first_df["tenure_years"] >= 1]
+        short = eligible[eligible["tenure_years"] <= 5]   # 1.5–2x resignation multiplier
+        long_ = eligible[eligible["tenure_years"] > 5]    # 1x resignation multiplier
+
+        if len(short) < 5 or len(long_) < 5:
+            pytest.skip("Insufficient data in tenure buckets")
+
+        short_rate = short["resigned"].mean()
+        long_rate = long_["resigned"].mean()
+
+        assert short_rate > long_rate, (
+            f"Short-tenure resign rate ({short_rate:.2%}) should exceed long ({long_rate:.2%})"
         )
 
 
