@@ -190,10 +190,9 @@ def generate_monthly_snapshot(base_employees, month_offset, base_date_str, confi
             and base_date_str < employee["resign_date"]
             and random.random() < 0.3
         ):
-            new_score = round(
-                min(max(employee["engagement_score"] * random.uniform(0.9, 1.1), 0), 100),
-                0,
-            )
+            new_score = int(round(
+                min(max(employee["engagement_score"] * random.uniform(0.9, 1.1), 0), 100)
+            ))
             employee["engagement_score"] = new_score
             base_employee["engagement_score"] = new_score
 

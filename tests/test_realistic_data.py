@@ -187,29 +187,43 @@ class TestResignationRateAttributes:
 class TestEngagementResignationCausality:
     """A4: Low engagement should increase resignation probability."""
 
-    def test_low_engagement_higher_resignation(self, multi_month_resign_config):
-        """Resigned employees should have lower average engagement than retained."""
-        df = generate_dataset(multi_month_resign_config)
-        # Get first month snapshot for initial engagement comparison
-        first_month = df["base_date"].min()
-        first_df = df[df["base_date"] == first_month].copy()
+    def test_low_engagement_higher_resignation_probability(self):
+        """_calculate_resignation_probability must return strictly higher prob for low engagement.
 
-        # Track who resigned
-        resigned_ids = set(
-            df[df["resign_date"] != "2999-12-31"]["emp_id"].unique()
+        Directly tests the mechanism rather than an aggregate outcome: at fixed tenure the
+        low-engagement multiplier (2–3x) must dominate the high-engagement one (0.7x).
+        """
+        from datetime import timedelta
+        from hr_generator.monthly import _calculate_resignation_probability
+
+        config = GeneratorConfig(
+            language="English",
+            employee_count=100,
+            num_months=12,
+            age_range=(22, 60),
+            salary_range=(4000000, 10000000),
+            resignation_rate=0.10,
         )
 
-        first_df["resigned"] = first_df["emp_id"].isin(resigned_ids)
-        with_score = first_df[first_df["engagement_score"].notna()]
+        # Fix tenure at 4 years so the tenure multiplier is the same for all three employees
+        hire_date = (datetime.now() - timedelta(days=4 * 365)).strftime("%Y-%m-%d")
+        base_date_dt = datetime.now()
 
-        if len(with_score[with_score["resigned"]]) == 0:
-            pytest.skip("No resignees with engagement scores")
+        low_prob = _calculate_resignation_probability(
+            {"hire_date": hire_date, "engagement_score": 30}, base_date_dt, config
+        )
+        mid_prob = _calculate_resignation_probability(
+            {"hire_date": hire_date, "engagement_score": 62}, base_date_dt, config
+        )
+        high_prob = _calculate_resignation_probability(
+            {"hire_date": hire_date, "engagement_score": 85}, base_date_dt, config
+        )
 
-        resigned_avg = with_score[with_score["resigned"]]["engagement_score"].mean()
-        retained_avg = with_score[~with_score["resigned"]]["engagement_score"].mean()
-
-        assert resigned_avg < retained_avg, (
-            f"Resigned avg engagement ({resigned_avg:.1f}) should be < retained ({retained_avg:.1f})"
+        assert low_prob > mid_prob, (
+            f"Low-engagement prob ({low_prob:.4f}) should exceed mid ({mid_prob:.4f})"
+        )
+        assert mid_prob > high_prob, (
+            f"Mid-engagement prob ({mid_prob:.4f}) should exceed high ({high_prob:.4f})"
         )
 
 
